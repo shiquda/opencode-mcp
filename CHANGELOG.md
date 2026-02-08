@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-02-08
+
+### Added
+
+- **Auto-serve** — the MCP server now automatically detects whether `opencode serve` is running and starts it as a child process if not. No more manual "start opencode serve" step before using the MCP server.
+  - Checks the `/global/health` endpoint on startup
+  - Finds the `opencode` binary via `which`/`where`
+  - Spawns `opencode serve --port <port>` and polls until healthy
+  - Graceful shutdown: kills the managed child process on SIGINT/SIGTERM/exit
+  - Clear error messages with install instructions if the binary is not found
+- **`OPENCODE_AUTO_SERVE` env var** — set to `"false"` to disable auto-start for users who prefer manual control
+- **`src/server-manager.ts` module** — new module with `findBinary()`, `isServerRunning()`, `startServer()`, `stopServer()`, `ensureServer()`
+- **140 tests** (up from 117) — 23 new tests for the server manager covering health checks, binary detection, auto-start, error cases, and shutdown
+
+### Changed
+
+- Startup flow in `src/index.ts` now calls `ensureServer()` before connecting the MCP transport
+- Updated README: removed manual "start opencode serve" step, added auto-serve documentation, updated env vars table and architecture section
+
 ## [1.2.0] - 2025-02-08
 
 ### Added

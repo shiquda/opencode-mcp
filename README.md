@@ -5,19 +5,16 @@
 [![node](https://img.shields.io/node/v/opencode-mcp)](https://nodejs.org/)
 [![npm downloads](https://img.shields.io/npm/dm/opencode-mcp)](https://www.npmjs.com/package/opencode-mcp)
 
-An [MCP](https://modelcontextprotocol.io/) server that gives any MCP-compatible client full access to a running [OpenCode](https://opencode.ai/) instance. Manage sessions, send prompts, search files, review diffs, configure providers, control the TUI, and more.
+An [MCP](https://modelcontextprotocol.io/) server that gives any MCP-compatible client full access to [OpenCode](https://opencode.ai/). Manage sessions, send prompts, search files, review diffs, configure providers, control the TUI, and more.
 
-**71 tools** | **10 resources** | **5 prompts** | **Multi-project support**
+**71 tools** | **10 resources** | **5 prompts** | **Multi-project support** | **Auto-start**
 
 ## Quick Start
 
-### 1. Start an OpenCode server
+Add to your MCP client and go. The server **automatically detects and starts** the OpenCode server if it's not already running — no manual `opencode serve` step needed.
 
-```bash
-opencode serve
-```
-
-### 2. Add to your MCP client
+> **Prerequisite:** [OpenCode](https://opencode.ai/) must be installed on your system.
+> Install: `curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai` or `brew install sst/tap/opencode`
 
 Pick your client below. No authentication is needed by default — just add the config and restart your client.
 
@@ -137,7 +134,7 @@ claude mcp add opencode -- npx -y opencode-mcp
 }
 ```
 
-That's it. Your MCP client now has access to the entire OpenCode API.
+That's it. Your MCP client now has access to the entire OpenCode API. The MCP server will auto-start `opencode serve` if it's not already running.
 
 ### Custom server URL or authentication (optional)
 
@@ -157,6 +154,16 @@ If the OpenCode server is on a different host/port or has auth enabled, pass env
         "OPENCODE_SERVER_PASSWORD": "mypass"
       }
     }
+  }
+}
+```
+
+To **disable** auto-start (if you prefer to manage the OpenCode server yourself):
+
+```json
+{
+  "env": {
+    "OPENCODE_AUTO_SERVE": "false"
   }
 }
 ```
@@ -240,6 +247,7 @@ All environment variables are **optional**. You only need to set them if you've 
 | `OPENCODE_BASE_URL` | URL of the OpenCode server | `http://127.0.0.1:4096` | No |
 | `OPENCODE_SERVER_USERNAME` | HTTP basic auth username | `opencode` | No |
 | `OPENCODE_SERVER_PASSWORD` | HTTP basic auth password | *(none — auth disabled)* | No |
+| `OPENCODE_AUTO_SERVE` | Auto-start `opencode serve` if not running | `true` | No |
 
 > **Note:** Authentication is disabled by default. It only activates when `OPENCODE_SERVER_PASSWORD` is set on both the OpenCode server and the MCP server.
 
@@ -250,7 +258,9 @@ MCP Client  <--stdio-->  opencode-mcp  <--HTTP-->  OpenCode Server
 (Claude, Cursor, etc.)   (this package)            (opencode serve)
 ```
 
-The MCP server communicates over **stdio** using the Model Context Protocol. When a client invokes a tool, the server translates it into HTTP calls against the OpenCode headless API. The OpenCode server must be running separately (`opencode serve`).
+The MCP server communicates over **stdio** using the Model Context Protocol. When a client invokes a tool, the server translates it into HTTP calls against the OpenCode headless API.
+
+**Auto-start flow:** On startup, the MCP server checks if the OpenCode server is already running (via the `/global/health` endpoint). If not, it finds the `opencode` binary on your system and spawns `opencode serve` as a child process. The child is automatically cleaned up when the MCP server exits.
 
 ## Working with Multiple Projects
 
@@ -292,6 +302,7 @@ When `directory` is omitted, the OpenCode server uses its own working directory 
 ```
 src/
   index.ts              Entry point — wires everything together
+  server-manager.ts     Auto-detect, find, and start OpenCode server
   client.ts             HTTP client with retry, SSE, error categorization
   helpers.ts            Smart response formatting for LLM-friendly output
   resources.ts          MCP Resources (10 browseable data endpoints)
