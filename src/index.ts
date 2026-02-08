@@ -54,7 +54,7 @@ const client = new OpenCodeClient({ baseUrl, username, password });
 
 const server = new McpServer({
   name: "opencode-mcp",
-  version: "1.0.2",
+  version: "1.1.0",
   description:
     "Full-featured MCP server wrapping the OpenCode AI headless HTTP server. " +
     "Provides 60+ tools, resources, and prompts to manage sessions, send " +

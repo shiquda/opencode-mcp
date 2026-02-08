@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-02-08
+
+### Added
+
+- **Test suite** — 102 tests across 5 test files using Vitest
+  - `helpers.test.ts` — 35 tests for all formatting and response helper functions
+  - `client.test.ts` — 37 tests for HTTP client, error handling, retry logic, auth
+  - `tools.test.ts` — 16 tests for tool registration and handler behavior
+  - `resources.test.ts` — 7 tests for MCP resource registration and handlers
+  - `prompts.test.ts` — 7 tests for MCP prompt registration and handlers
+- `vitest.config.ts` configuration
+- `test`, `test:watch`, and `test:coverage` npm scripts
+
 ## [1.0.1] - 2025-02-08
 
 ### Changed
