@@ -1,8 +1,9 @@
 # opencode-mcp
 
-[![npm version](https://img.shields.io/npm/v/opencode-mcp.svg)](https://www.npmjs.com/package/opencode-mcp)
-[![license](https://img.shields.io/npm/l/opencode-mcp.svg)](https://github.com/AlaeddineMessadi/opencode-mcp/blob/main/LICENSE)
-[![node](https://img.shields.io/node/v/opencode-mcp.svg)](https://nodejs.org/)
+[![npm version](https://img.shields.io/npm/v/opencode-mcp)](https://www.npmjs.com/package/opencode-mcp)
+[![license](https://img.shields.io/github/license/AlaeddineMessadi/opencode-mcp)](https://github.com/AlaeddineMessadi/opencode-mcp/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/opencode-mcp)](https://nodejs.org/)
+[![npm downloads](https://img.shields.io/npm/dm/opencode-mcp)](https://www.npmjs.com/package/opencode-mcp)
 
 An [MCP](https://modelcontextprotocol.io/) server that gives any MCP-compatible client full access to a running [OpenCode](https://opencode.ai/) instance. Manage sessions, send prompts, search files, review diffs, configure providers, control the TUI, and more.
 
