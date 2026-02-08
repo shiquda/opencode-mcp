@@ -18,6 +18,8 @@ opencode serve
 
 ### 2. Add to your MCP client
 
+Pick your client below. No authentication is needed by default — just add the config and restart your client.
+
 **Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
@@ -63,13 +65,27 @@ claude mcp add opencode -- npx -y opencode-mcp
 }
 ```
 
-**opencode** (`opencode.json`):
+**VS Code — GitHub Copilot** (`settings.json`):
 
 ```json
 {
-  "mcp": {
-    "opencode-mcp": {
+  "github.copilot.chat.mcp.servers": [
+    {
+      "name": "opencode",
       "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "opencode-mcp"]
+    }
+  ]
+}
+```
+
+**Cline** (VS Code extension settings):
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
       "command": "npx",
       "args": ["-y", "opencode-mcp"]
     }
@@ -77,9 +93,54 @@ claude mcp add opencode -- npx -y opencode-mcp
 }
 ```
 
+**Continue** (`.continue/config.json`):
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
+      "command": "npx",
+      "args": ["-y", "opencode-mcp"]
+    }
+  }
+}
+```
+
+**Zed** (`settings.json`):
+
+```json
+{
+  "context_servers": {
+    "opencode": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "opencode-mcp"]
+      }
+    }
+  }
+}
+```
+
+**Amazon Q** (VS Code `settings.json`):
+
+```json
+{
+  "amazon-q.mcp.servers": [
+    {
+      "name": "opencode",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "opencode-mcp"]
+    }
+  ]
+}
+```
+
 That's it. Your MCP client now has access to the entire OpenCode API.
 
-### Custom server URL or auth
+### Custom server URL or authentication (optional)
+
+By default, the MCP server connects to `http://127.0.0.1:4096` with no authentication. Both username and password are **optional** — auth is only needed if you've enabled it on the OpenCode server side.
 
 If the OpenCode server is on a different host/port or has auth enabled, pass environment variables:
 
@@ -170,11 +231,15 @@ Guided workflow templates:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPENCODE_BASE_URL` | URL of the OpenCode server | `http://127.0.0.1:4096` |
-| `OPENCODE_SERVER_USERNAME` | HTTP basic auth username | `opencode` |
-| `OPENCODE_SERVER_PASSWORD` | HTTP basic auth password | *(none — auth disabled)* |
+All environment variables are **optional**. You only need to set them if you've changed the defaults on the OpenCode server side.
+
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `OPENCODE_BASE_URL` | URL of the OpenCode server | `http://127.0.0.1:4096` | No |
+| `OPENCODE_SERVER_USERNAME` | HTTP basic auth username | `opencode` | No |
+| `OPENCODE_SERVER_PASSWORD` | HTTP basic auth password | *(none — auth disabled)* | No |
+
+> **Note:** Authentication is disabled by default. It only activates when `OPENCODE_SERVER_PASSWORD` is set on both the OpenCode server and the MCP server.
 
 ## How It Works
 
@@ -228,6 +293,20 @@ npm run dev      # watch mode
 - [Prompts Reference](docs/prompts.md) — all 5 MCP prompts
 - [Usage Examples](docs/examples.md) — real workflow examples
 - [Architecture](docs/architecture.md) — system design and data flow
+
+## Compatible MCP Clients
+
+Works with any MCP-compatible client, including:
+
+- [Claude Desktop](https://claude.ai/download)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- [Cursor](https://cursor.sh/)
+- [Windsurf](https://codeium.com/windsurf)
+- [VS Code (GitHub Copilot)](https://code.visualstudio.com/)
+- [Cline](https://github.com/cline/cline)
+- [Continue](https://continue.dev/)
+- [Zed](https://zed.dev/)
+- [Amazon Q](https://aws.amazon.com/q/developer/)
 
 ## References
 

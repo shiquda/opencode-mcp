@@ -2,18 +2,18 @@
 
 ## Environment Variables
 
-All configuration is done through environment variables. Pass them in your MCP client config's `env` field.
+All environment variables are **optional**. You only need to set them if you've changed the defaults on the OpenCode server side.
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPENCODE_BASE_URL` | URL of the OpenCode headless server | `http://127.0.0.1:4096` |
-| `OPENCODE_SERVER_USERNAME` | HTTP basic auth username | `opencode` |
-| `OPENCODE_SERVER_PASSWORD` | HTTP basic auth password | *(empty — auth disabled when not set)* |
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `OPENCODE_BASE_URL` | URL of the OpenCode headless server | `http://127.0.0.1:4096` | No |
+| `OPENCODE_SERVER_USERNAME` | HTTP basic auth username | `opencode` | No |
+| `OPENCODE_SERVER_PASSWORD` | HTTP basic auth password | *(none — auth disabled)* | No |
 
 ### Notes
 
-- **Auth is disabled by default.** It only activates when `OPENCODE_SERVER_PASSWORD` is set on both the OpenCode server and the MCP server.
-- **The default username is `opencode`**, matching the OpenCode server's default. You only need to set `OPENCODE_SERVER_USERNAME` if you changed it on the server side.
+- **Authentication is disabled by default.** It only activates when `OPENCODE_SERVER_PASSWORD` is set on both the OpenCode server and the MCP server.
+- **Username and password are both optional.** The default username is `opencode`, matching the OpenCode server's default. You only need to set these if you've explicitly enabled auth on the server.
 - **The base URL** should point to where `opencode serve` is listening. If running on the same machine with default settings, you don't need to set this.
 
 ## MCP Client Configurations
@@ -81,15 +81,39 @@ claude mcp remove opencode
 }
 ```
 
-### opencode
+### VS Code — GitHub Copilot
 
-**Config file:** `opencode.json` in your project root
+**Config file:** `.vscode/settings.json` or user `settings.json`
 
 ```json
 {
-  "mcp": {
-    "opencode-mcp": {
+  "github.copilot.chat.mcp.servers": [
+    {
+      "name": "opencode",
       "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "opencode-mcp"]
+    }
+  ]
+}
+```
+
+### Cline (VS Code extension)
+
+Cline manages MCP servers through its own settings UI. Add a new server with:
+
+- **Command:** `npx`
+- **Args:** `-y opencode-mcp`
+- **Transport:** stdio
+
+### Continue
+
+**Config file:** `.continue/config.json` in your project root or `~/.continue/config.json` globally
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
       "command": "npx",
       "args": ["-y", "opencode-mcp"]
     }
@@ -97,9 +121,43 @@ claude mcp remove opencode
 }
 ```
 
-### With authentication
+### Zed
 
-Add `env` to any config above:
+**Config file:** `~/.config/zed/settings.json` or project `settings.json`
+
+```json
+{
+  "context_servers": {
+    "opencode": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "opencode-mcp"]
+      }
+    }
+  }
+}
+```
+
+### Amazon Q
+
+**Config file:** VS Code `settings.json`
+
+```json
+{
+  "amazon-q.mcp.servers": [
+    {
+      "name": "opencode",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "opencode-mcp"]
+    }
+  ]
+}
+```
+
+### With authentication (optional)
+
+Add `env` to any config above. This is only needed if you've enabled auth on the OpenCode server:
 
 ```json
 {
@@ -148,7 +206,7 @@ opencode serve
 # Custom port
 opencode serve --port 8080
 
-# With authentication
+# With authentication (optional)
 OPENCODE_SERVER_USERNAME=myuser OPENCODE_SERVER_PASSWORD=mypass opencode serve
 ```
 

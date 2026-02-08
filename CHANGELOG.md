@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-02-08
+
+### Changed
+
+- Removed opencode self-referencing config from README (it doesn't make sense to add opencode-mcp to opencode itself)
+- Added MCP client configs for VS Code (GitHub Copilot), Cline, Continue, Zed, and Amazon Q
+- Clarified that all environment variables and authentication are optional
+- Added "Compatible MCP Clients" section to README
+- Updated docs/configuration.md with all new client configs
+
 ## [1.0.0] - 2025-02-08
 
 ### Added
