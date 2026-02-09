@@ -214,6 +214,7 @@ export class OpenCodeClient {
    */
   async *subscribeSSE(
     path: string,
+    opts?: { signal?: AbortSignal },
   ): AsyncGenerator<{ event: string; data: string }, void, undefined> {
     const url = this.buildUrl(path);
     const res = await fetch(url, {
@@ -223,6 +224,7 @@ export class OpenCodeClient {
         Accept: "text/event-stream",
         "Cache-Control": "no-cache",
       },
+      signal: opts?.signal,
     });
 
     if (!res.ok) {
@@ -246,8 +248,25 @@ export class OpenCodeClient {
     let currentEvent = "";
     let currentData = "";
 
+    const abortHandler = () => {
+      try {
+        // Cancels any pending reader.read() and causes the generator to unwind.
+        void reader.cancel().catch(() => {
+          // ignore
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    if (opts?.signal) {
+      if (opts.signal.aborted) abortHandler();
+      else opts.signal.addEventListener("abort", abortHandler, { once: true });
+    }
+
     try {
       while (true) {
+        if (opts?.signal?.aborted) break;
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -270,6 +289,13 @@ export class OpenCodeClient {
         }
       }
     } finally {
+      if (opts?.signal) {
+        try {
+          opts.signal.removeEventListener("abort", abortHandler);
+        } catch {
+          // ignore
+        }
+      }
       reader.releaseLock();
     }
   }

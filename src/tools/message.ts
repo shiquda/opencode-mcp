@@ -5,6 +5,7 @@ import {
   toolResult,
   toolError,
   formatMessageResponse,
+  analyzeMessageResponse,
   formatMessageList,
   directoryParam,
 } from "../helpers.js";
@@ -111,7 +112,18 @@ export function registerMessageTools(
           body,
           { directory },
         );
-        return toolResult(formatMessageResponse(response));
+
+        const analysis = analyzeMessageResponse(response);
+        const formatted = formatMessageResponse(response);
+        const parts: string[] = [];
+        if (formatted) parts.push(formatted);
+        if (analysis.warning) {
+          parts.push(`\n--- WARNING ---\n${analysis.warning}`);
+        }
+        return toolResult(
+          parts.join("\n\n") || "Empty response.",
+          analysis.hasError,
+        );
       } catch (e) {
         return toolError(e);
       }

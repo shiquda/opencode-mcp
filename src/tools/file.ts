@@ -15,15 +15,25 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
     },
     async ({ pattern, directory }) => {
       try {
-        const results = (await client.get("/find", { pattern }, directory)) as Array<Record<string, unknown>>;
-        if (!results || results.length === 0) {
+        const raw = await client.get("/find", { pattern }, directory);
+        const results = Array.isArray(raw) ? raw as Array<Record<string, unknown>> : [];
+        if (results.length === 0) {
           return toolResult(`No matches found for pattern: ${pattern}`);
         }
         const formatted = results.map((r) => {
-          const path = r.path ?? "";
-          const lineNum = r.line_number ?? "?";
-          const lines = r.lines ?? "";
-          return `${path}:${lineNum}  ${typeof lines === "string" ? lines.trim() : JSON.stringify(lines)}`;
+          // The API returns path as {text: "file.ts"} and lines as {text: "content\n"}
+          const rawPath = r.path ?? r.file ?? r.name ?? "";
+          const filePath = typeof rawPath === "string"
+            ? rawPath
+            : (rawPath as Record<string, unknown>)?.text ?? (rawPath as Record<string, unknown>)?.path ?? (rawPath as Record<string, unknown>)?.name ?? String(rawPath);
+          const lineNum = r.line_number ?? r.lineNumber ?? r.line ?? "?";
+          const rawLines = r.lines ?? r.text ?? r.content ?? "";
+          const lineText = typeof rawLines === "string"
+            ? rawLines.trim()
+            : (rawLines as Record<string, unknown>)?.text != null
+              ? String((rawLines as Record<string, unknown>).text).trim()
+              : JSON.stringify(rawLines);
+          return `${filePath}:${lineNum}  ${lineText}`;
         }).join("\n");
         return toolResult(`${results.length} match(es):\n\n${formatted}`);
       } catch (e) {
@@ -77,7 +87,20 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
     },
     async ({ query, directory }) => {
       try {
-        return toolJson(await client.get("/find/symbol", { query }, directory));
+        const raw = await client.get("/find/symbol", { query }, directory);
+        const symbols = Array.isArray(raw) ? raw as Array<Record<string, unknown>> : [];
+        if (symbols.length === 0) {
+          return toolResult(`No symbols found matching: ${query}`);
+        }
+        const lines = symbols.map((s) => {
+          const name = s.name ?? s.symbol ?? "?";
+          const kind = s.kind ? ` (${s.kind})` : "";
+          const loc = s.location ?? s.path ?? s.file ?? "";
+          const line = s.line ?? s.lineNumber ?? "";
+          const locStr = loc ? ` — ${loc}${line ? `:${line}` : ""}` : "";
+          return `- ${name}${kind}${locStr}`;
+        });
+        return toolResult(`${symbols.length} symbol(s) matching "${query}":\n\n${lines.join("\n")}`);
       } catch (e) {
         return toolError(e);
       }
@@ -96,8 +119,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
     },
     async ({ path, directory }) => {
       try {
-        const q: Record<string, string> = {};
-        if (path) q.path = path;
+        const q: Record<string, string> = { path: path || "." };
         const nodes = (await client.get("/file", q, directory)) as Array<Record<string, unknown>>;
         if (!nodes || nodes.length === 0) {
           return toolResult("Empty directory.");

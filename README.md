@@ -7,7 +7,7 @@
 
 An [MCP](https://modelcontextprotocol.io/) server that gives any MCP-compatible client full access to [OpenCode](https://opencode.ai/). Manage sessions, send prompts, search files, review diffs, configure providers, control the TUI, and more.
 
-**72 tools** | **10 resources** | **5 prompts** | **Multi-project support** | **Auto-start**
+**75 tools** | **10 resources** | **5 prompts** | **Multi-project support** | **Auto-start**
 
 ## Quick Start
 
@@ -184,8 +184,10 @@ High-level tools designed to be the easiest way for an LLM to interact with Open
 | `opencode_context` | Project + path + VCS + config + agents in one call |
 | `opencode_wait` | Poll an async session until it finishes |
 | `opencode_review_changes` | Formatted diff summary for a session |
+| `opencode_provider_test` | Quick-test whether a provider is actually working |
+| `opencode_status` | Quick dashboard: health, providers, sessions, VCS |
 
-### Session Tools (18)
+### Session Tools (19)
 
 Create, list, get, delete, update, fork, share, abort, revert sessions. Get diffs, todos, summaries, child sessions, and respond to permission requests.
 
@@ -197,7 +199,11 @@ Send prompts (sync or async), list/get messages, execute slash commands, run she
 
 Search text/regex across the project, find files by name, find workspace symbols, list directories, read files, check VCS file status.
 
-### Config & Provider Tools (8)
+### Project Tools (2)
+
+List known projects and inspect the current active project.
+
+### Config & Provider Tools (9)
 
 Get/update config, list providers and models, manage auth (API keys, OAuth).
 
@@ -205,7 +211,7 @@ Get/update config, list providers and models, manage auth (API keys, OAuth).
 
 Remote-control the OpenCode TUI: append/submit/clear prompts, execute commands, show toasts, open dialogs (help, sessions, models, themes).
 
-### System & Monitoring Tools (13)
+### System & Monitoring Tools (14)
 
 Health checks, VCS info, LSP/formatter status, MCP server management, agent/command listing, logging, SSE event polling.
 
@@ -308,14 +314,14 @@ src/
   resources.ts          MCP Resources (10 browseable data endpoints)
   prompts.ts            MCP Prompts (5 guided workflow templates)
   tools/
-    workflow.ts         High-level workflow tools (8)
-    session.ts          Session management tools (18)
+    workflow.ts         High-level workflow tools (10)
+    session.ts          Session management tools (19)
     message.ts          Message/prompt tools (6)
     file.ts             File and search tools (6)
     tui.ts              TUI remote control tools (9)
     config.ts           Config tools (3)
     provider.ts         Provider/auth tools (6)
-    misc.ts             System, agents, LSP, MCP, logging tools (13)
+    misc.ts             System, agents, LSP, MCP, logging tools (12)
     events.ts           SSE event polling (1)
     global.ts           Health check (1)
     project.ts          Project tools (2)
@@ -332,11 +338,22 @@ npm start        # runs the MCP server
 npm run dev      # watch mode
 ```
 
+### Smoke Testing
+
+There is a local smoke test runner that spawns `opencode-mcp` over stdio and calls most tools end-to-end against your running OpenCode server:
+
+```bash
+npm run build
+node scripts/mcp-smoke-test.mjs
+```
+
+By default it **skips tools that are destructive or require special environment state** (OAuth flows, TUI control, `config_update`, `instance_dispose`, long-running `session_init`/`session_summarize`).
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md) — step-by-step setup guide
 - [Configuration](docs/configuration.md) — all env vars and MCP client configs
-- [Tools Reference](docs/tools.md) — detailed reference for all 72 tools
+- [Tools Reference](docs/tools.md) — detailed reference for all 75 tools
 - [Resources Reference](docs/resources.md) — all 10 MCP resources
 - [Prompts Reference](docs/prompts.md) — all 5 MCP prompts
 - [Usage Examples](docs/examples.md) — real workflow examples

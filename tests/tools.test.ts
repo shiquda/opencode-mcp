@@ -5,6 +5,7 @@ import { registerGlobalTools } from "../src/tools/global.js";
 import { registerWorkflowTools } from "../src/tools/workflow.js";
 import { registerConfigTools } from "../src/tools/config.js";
 import { registerSessionTools } from "../src/tools/session.js";
+import { registerMessageTools } from "../src/tools/message.js";
 import { registerFileTools } from "../src/tools/file.js";
 import { registerProjectTools } from "../src/tools/project.js";
 import { registerProviderTools } from "../src/tools/provider.js";
@@ -49,7 +50,7 @@ describe("Tool registration", () => {
   });
 
   describe("registerWorkflowTools", () => {
-    it("registers all 8 workflow tools", () => {
+    it("registers all 10 workflow tools", () => {
       const { tools } = captureTools(registerWorkflowTools);
       const expected = [
         "opencode_setup",
@@ -60,11 +61,13 @@ describe("Tool registration", () => {
         "opencode_context",
         "opencode_wait",
         "opencode_review_changes",
+        "opencode_provider_test",
+        "opencode_status",
       ];
       for (const name of expected) {
         expect(tools.has(name), `Missing tool: ${name}`).toBe(true);
       }
-      expect(tools.size).toBe(8);
+      expect(tools.size).toBe(10);
     });
   });
 
@@ -79,9 +82,9 @@ describe("Tool registration", () => {
   });
 
   describe("registerSessionTools", () => {
-    it("registers 18 session tools", () => {
+    it("registers 19 session tools", () => {
       const { tools } = captureTools(registerSessionTools);
-      expect(tools.size).toBe(18);
+      expect(tools.size).toBe(19);
       expect(tools.has("opencode_session_list")).toBe(true);
       expect(tools.has("opencode_session_create")).toBe(true);
       expect(tools.has("opencode_session_delete")).toBe(true);
@@ -373,26 +376,23 @@ describe("Tool handlers", () => {
   });
 
   describe("opencode_setup", () => {
-    it("shows WORKING for provider that responds to probe", async () => {
+    it("shows 'Ready to use' for providers with source=env and context-dependent next steps", async () => {
       const mockClient = createMockClient({
         get: vi.fn().mockImplementation((path: string) => {
           if (path === "/global/health") return Promise.resolve({ version: "0.2.0" });
-          if (path === "/provider") return Promise.resolve([
-            { id: "anthropic", connected: true, models: [{ id: "claude-sonnet-4-20250514" }] },
-            { id: "openai", connected: false, models: [] },
-          ]);
+          if (path === "/provider") return Promise.resolve({ all: [
+            { id: "huggingface", name: "Hugging Face", source: "env", env: ["HF_TOKEN"], models: { "meta-llama": { id: "meta-llama" } } },
+            // openai and anthropic: source=custom with empty options = NOT configured (listed under Quick setup)
+            { id: "openai", name: "OpenAI", source: "custom", options: {}, env: ["OPENAI_API_KEY"], models: {} },
+            { id: "anthropic", name: "Anthropic", source: "custom", options: {}, env: ["ANTHROPIC_API_KEY"], models: { "claude-sonnet-4-20250514": { id: "claude-sonnet-4-20250514" } } },
+          ]});
           if (path === "/provider/auth") return Promise.resolve({
-            openai: [{ type: "api" }, { type: "oauth" }],
+            openai: [{ type: "api", label: "API Key" }, { type: "oauth", label: "OAuth" }],
+            anthropic: [{ type: "api", label: "API Key" }],
           });
           if (path === "/project/current") return Promise.resolve({ name: "my-app", worktree: "/home/user/my-app", vcs: "git" });
           return Promise.resolve({});
         }),
-        post: vi.fn()
-          .mockResolvedValueOnce({ id: "probe-session-1" }) // create probe session
-          .mockResolvedValueOnce({ // probe response with text
-            parts: [{ type: "text", text: "OK" }],
-          }),
-        delete: vi.fn().mockResolvedValue(undefined),
       });
       const tools = new Map<string, Function>();
       const mockServer = {
@@ -407,29 +407,30 @@ describe("Tool handlers", () => {
       const text = result.content[0].text;
       expect(text).toContain("healthy");
       expect(text).toContain("0.2.0");
+      expect(text).toContain("Ready to use");
+      expect(text).toContain("huggingface");
+      expect(text).toContain("HF_TOKEN");
+      expect(text).toContain("Quick setup options");
       expect(text).toContain("anthropic");
-      expect(text).toContain("WORKING");
-      expect(text).toContain("NOT CONFIGURED");
-      expect(text).toContain("available auth: api, oauth");
+      expect(text).toContain("openai");
       expect(text).toContain("my-app");
+      // Has a ready provider (huggingface), so next steps should say "ready to go"
+      expect(text).toContain("ready to go");
       expect(text).toContain("Next Steps");
     });
 
-    it("shows CONNECTED BUT NOT RESPONDING for provider with empty probe", async () => {
+    it("shows 'No providers configured' and setup guidance when none have any source", async () => {
       const mockClient = createMockClient({
         get: vi.fn().mockImplementation((path: string) => {
           if (path === "/global/health") return Promise.resolve({ version: "0.2.0" });
-          if (path === "/provider") return Promise.resolve([
-            { id: "google", connected: true, models: [{ id: "gemini-2.5-flash" }] },
-          ]);
+          if (path === "/provider") return Promise.resolve({ all: [
+            // No source field = not configured
+            { id: "google", name: "Google", models: { "gemini-2.5-flash": { id: "gemini-2.5-flash" } } },
+          ]});
           if (path === "/provider/auth") return Promise.resolve({});
           if (path === "/project/current") return Promise.resolve({ name: "proj" });
           return Promise.resolve({});
         }),
-        post: vi.fn()
-          .mockResolvedValueOnce({ id: "probe-session-2" }) // create probe session
-          .mockResolvedValueOnce(null), // empty probe response
-        delete: vi.fn().mockResolvedValue(undefined),
       });
       const tools = new Map<string, Function>();
       const mockServer = {
@@ -443,23 +444,24 @@ describe("Tool handlers", () => {
       const result = await handler({});
       const text = result.content[0].text;
       expect(text).toContain("google");
-      expect(text).toContain("CONNECTED BUT NOT RESPONDING");
-      expect(text).toContain("API key may be invalid");
+      expect(text).toContain("No providers configured yet");
+      // Next steps should guide to configure a provider
+      expect(text).toContain("You need to configure a provider first");
+      expect(text).toContain("opencode_auth_set");
     });
 
-    it("shows 'could not verify' when probe throws", async () => {
+    it("detects source=custom with OAuth headers as configured — anthropic heuristic (N1 fix)", async () => {
       const mockClient = createMockClient({
         get: vi.fn().mockImplementation((path: string) => {
           if (path === "/global/health") return Promise.resolve({ version: "0.2.0" });
-          if (path === "/provider") return Promise.resolve([
-            { id: "anthropic", connected: true, models: [{ id: "claude-3" }] },
-          ]);
+          if (path === "/provider") return Promise.resolve({ all: [
+            // anthropic with OAuth: source=custom, empty apiKey, but has headers
+            { id: "anthropic", name: "Anthropic", source: "custom", options: { apiKey: "", headers: { "anthropic-beta": "test" } }, models: { "claude-3": { id: "claude-3" } } },
+          ]});
           if (path === "/provider/auth") return Promise.resolve({});
           if (path === "/project/current") return Promise.resolve({ name: "proj" });
           return Promise.resolve({});
         }),
-        post: vi.fn()
-          .mockRejectedValueOnce(new Error("timeout")), // probe fails entirely
       });
       const tools = new Map<string, Function>();
       const mockServer = {
@@ -472,7 +474,67 @@ describe("Tool handlers", () => {
       const handler = tools.get("opencode_setup")!;
       const result = await handler({});
       const text = result.content[0].text;
-      expect(text).toContain("could not verify");
+      // anthropic with OAuth headers should be detected as configured
+      expect(text).toContain("Ready to use");
+      expect(text).toContain("anthropic");
+      expect(text).toContain("ready to go");
+    });
+
+    it("does NOT detect source=custom with empty options as configured", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/global/health") return Promise.resolve({ version: "0.2.0" });
+          if (path === "/provider") return Promise.resolve({ all: [
+            // Generic provider with source=custom but no real credentials — NOT configured
+            { id: "groq", name: "Groq", source: "custom", options: {}, models: { "llama-3": { id: "llama-3" } } },
+          ]});
+          if (path === "/provider/auth") return Promise.resolve({});
+          if (path === "/project/current") return Promise.resolve({ name: "proj" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_setup")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      // source=custom with empty options = NOT configured
+      expect(text).toContain("No providers configured yet");
+      expect(text).toContain("You need to configure a provider first");
+    });
+
+    it("handles providers returned as { all: [...] } object format", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/global/health") return Promise.resolve({ version: "0.2.0" });
+          if (path === "/provider") return Promise.resolve({ all: [
+            { id: "anthropic", name: "Anthropic", source: "custom", options: { apiKey: "", headers: { "anthropic-beta": "test" } }, models: { "claude-3": { id: "claude-3" } } },
+          ]});
+          if (path === "/provider/auth") return Promise.resolve({});
+          if (path === "/project/current") return Promise.resolve({ name: "proj" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_setup")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      // Should parse { all: [...] } format correctly
+      expect(text).toContain("1 available");
+      expect(text).toContain("anthropic");
     });
 
     it("reports unreachable server", async () => {
@@ -501,9 +563,10 @@ describe("Tool handlers", () => {
     it("returns compact provider summary without models", async () => {
       const mockClient = createMockClient({
         get: vi.fn().mockResolvedValue([
-          { id: "anthropic", connected: true, models: [{ id: "claude-3" }, { id: "claude-4" }] },
-          { id: "openai", connected: false, models: [{ id: "gpt-4" }] },
-          { id: "google", connected: true, models: [] },
+          { id: "anthropic", source: "env", models: [{ id: "claude-3" }, { id: "claude-4" }] },
+          { id: "opencode", source: "custom", options: { apiKey: "public" }, models: [{ id: "gpt-4" }] },
+          { id: "google", source: "config", models: [] },
+          { id: "groq", source: "custom", options: {}, models: [] },  // source=custom with empty options = NOT configured
         ]),
       });
       const tools = new Map<string, Function>();
@@ -517,10 +580,13 @@ describe("Tool handlers", () => {
       const handler = tools.get("opencode_provider_list")!;
       const result = await handler({});
       const text = result.content[0].text;
-      // Should be compact — no model IDs dumped
-      expect(text).toContain("anthropic: connected (2 models)");
-      expect(text).toContain("openai: not configured (1 model)");
-      expect(text).toContain("google: connected (0 models)");
+      // Should be compact with configured first — no model IDs dumped
+      expect(text).toContain("**Configured:**");
+      expect(text).toContain("anthropic: 2 models");
+      expect(text).toContain("opencode: 1 model");  // source=custom with apiKey="public" IS configured
+      expect(text).toContain("google: 0 models");
+      expect(text).toContain("3 configured");
+      expect(text).toContain("**Not configured:**");
       expect(text).toContain("opencode_provider_models");
       // Must NOT contain raw model IDs
       expect(text).not.toContain("claude-3");
@@ -549,16 +615,16 @@ describe("Tool handlers", () => {
     const providerData = [
       {
         id: "anthropic",
-        connected: true,
+        source: "env",
         models: [
           { id: "claude-3", name: "Claude 3" },
           { id: "claude-4", name: "Claude 4" },
         ],
       },
-      { id: "openai", connected: false, models: [{ id: "gpt-4" }] },
+      { id: "openai", source: "config", models: [{ id: "gpt-4" }] },
     ];
 
-    it("lists models for a specific provider", async () => {
+    it("lists models for a configured provider", async () => {
       const mockClient = createMockClient({
         get: vi.fn().mockResolvedValue(providerData),
       });
@@ -574,7 +640,7 @@ describe("Tool handlers", () => {
       const result = await handler({ providerId: "anthropic" });
       const text = result.content[0].text;
       expect(text).toContain("anthropic");
-      expect(text).toContain("connected");
+      expect(text).toContain("configured");
       expect(text).toContain("claude-3");
       expect(text).toContain("Claude 3");
       expect(text).toContain("claude-4");
@@ -601,9 +667,11 @@ describe("Tool handlers", () => {
       expect(result.content[0].text).toContain("anthropic");
     });
 
-    it("shows NOT CONFIGURED status for disconnected provider", async () => {
+    it("shows configured for source=custom with apiKey (N4 fix)", async () => {
       const mockClient = createMockClient({
-        get: vi.fn().mockResolvedValue(providerData),
+        get: vi.fn().mockResolvedValue([
+          { id: "opencode", source: "custom", options: { apiKey: "public" }, models: [{ id: "model-1" }] },
+        ]),
       });
       const tools = new Map<string, Function>();
       const mockServer = {
@@ -614,10 +682,352 @@ describe("Tool handlers", () => {
       registerProviderTools(mockServer, mockClient);
 
       const handler = tools.get("opencode_provider_models")!;
-      const result = await handler({ providerId: "openai" });
+      const result = await handler({ providerId: "opencode" });
+      const text = result.content[0].text;
+      // source=custom with apiKey="public" IS configured
+      expect(text).toContain("configured");
+      expect(text).not.toContain("NOT CONFIGURED");
+    });
+
+    it("shows NOT CONFIGURED for source=custom with empty options", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          { id: "groq", source: "custom", options: {}, models: [{ id: "llama-3" }] },
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_models")!;
+      const result = await handler({ providerId: "groq" });
       const text = result.content[0].text;
       expect(text).toContain("NOT CONFIGURED");
-      expect(text).toContain("gpt-4");
+    });
+
+    it("shows configured for anthropic with OAuth headers heuristic", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          { id: "anthropic", source: "custom", options: { apiKey: "", headers: { "anthropic-beta": "test" } }, models: [{ id: "claude-3" }] },
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_models")!;
+      const result = await handler({ providerId: "anthropic" });
+      const text = result.content[0].text;
+      // anthropic with OAuth headers heuristic = configured
+      expect(text).toContain("configured");
+      expect(text).not.toContain("NOT CONFIGURED");
+    });
+
+    it("shows NOT CONFIGURED status for provider with no source", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          { id: "groq", models: [{ id: "llama-3" }] },
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_models")!;
+      const result = await handler({ providerId: "groq" });
+      const text = result.content[0].text;
+      expect(text).toContain("NOT CONFIGURED");
+    });
+
+    it("detects source=config as configured", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          { id: "google", source: "config", models: { "gemini-2.5-flash": { id: "gemini-2.5-flash" } } },
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_models")!;
+      const result = await handler({ providerId: "google" });
+      const text = result.content[0].text;
+      expect(text).toContain("configured");
+      expect(text).not.toContain("NOT CONFIGURED");
+      expect(text).toContain("gemini-2.5-flash");
+    });
+  });
+
+  describe("opencode_file_list", () => {
+    it("defaults path to '.' when not provided", async () => {
+      const getMock = vi.fn().mockResolvedValue([
+        { name: "src", type: "directory" },
+        { name: "package.json", type: "file" },
+      ]);
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_file_list")!;
+      await handler({});
+      // Should pass path="." even when path is not provided
+      expect(getMock).toHaveBeenCalledWith("/file", { path: "." }, undefined);
+    });
+
+    it("uses provided path", async () => {
+      const getMock = vi.fn().mockResolvedValue([]);
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_file_list")!;
+      await handler({ path: "src" });
+      expect(getMock).toHaveBeenCalledWith("/file", { path: "src" }, undefined);
+    });
+  });
+
+  describe("opencode_find_text", () => {
+    it("handles path as object without [object Object]", async () => {
+      const getMock = vi.fn().mockResolvedValue([
+        { path: { path: "src/index.ts", name: "index.ts" }, line_number: 10, lines: "const x = 1;" },
+      ]);
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_find_text")!;
+      const result = await handler({ pattern: "const x" });
+      const text = result.content[0].text;
+      expect(text).not.toContain("[object Object]");
+      expect(text).toContain("src/index.ts");
+      expect(text).toContain(":10");
+    });
+
+    it("handles path as string normally", async () => {
+      const getMock = vi.fn().mockResolvedValue([
+        { path: "src/main.ts", line_number: 5, lines: "import { foo } from './bar';" },
+      ]);
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_find_text")!;
+      const result = await handler({ pattern: "import" });
+      const text = result.content[0].text;
+      expect(text).toContain("src/main.ts:5");
+    });
+  });
+
+  describe("opencode_find_symbol (N2 fix)", () => {
+    it("returns friendly message for empty results instead of raw []", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_find_symbol")!;
+      const result = await handler({ query: "nonexistent" });
+      const text = result.content[0].text;
+      expect(text).toContain("No symbols found matching: nonexistent");
+      expect(text).not.toContain("[]");
+    });
+
+    it("formats symbol results as a list", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          { name: "MyClass", kind: "class", location: "src/main.ts", line: 10 },
+          { name: "myFunction", kind: "function", path: "src/utils.ts", lineNumber: 25 },
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerFileTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_find_symbol")!;
+      const result = await handler({ query: "my" });
+      const text = result.content[0].text;
+      expect(text).toContain("2 symbol(s)");
+      expect(text).toContain("MyClass (class)");
+      expect(text).toContain("src/main.ts:10");
+      expect(text).toContain("myFunction (function)");
+      expect(text).toContain("src/utils.ts:25");
+    });
+  });
+
+  describe("opencode_session_status (N3 fix)", () => {
+    it("returns 'All sessions idle' for empty status object", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue({}),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("All sessions idle");
+      expect(text).not.toContain("{}");
+    });
+
+    it("formats non-empty status as a list", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue({ "session-1": "running", "session-2": "idle" }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("Session Status (2)");
+      expect(text).toContain("session-1: running");
+      expect(text).toContain("session-2: idle");
+    });
+  });
+
+  describe("opencode_provider_models error (N6 fix)", () => {
+    it("truncates provider list in error message to first 10", async () => {
+      // Create 20 providers
+      const providers = Array.from({ length: 20 }, (_, i) => ({
+        id: `provider-${i}`,
+        source: "env",
+        models: [],
+      }));
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue(providers),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_models")!;
+      const result = await handler({ providerId: "nonexistent" });
+      const text = result.content[0].text;
+      expect(text).toContain("not found");
+      expect(text).toContain("provider-0");
+      expect(text).toContain("provider-9");
+      expect(text).not.toContain("provider-10");
+      expect(text).toContain("... and 10 more");
+      expect(text).toContain("opencode_provider_list");
+    });
+  });
+
+  describe("opencode_provider_list (N5 fix — source detection)", () => {
+    it("detects source=api as configured and source=custom with credentials", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([
+          // anthropic with OAuth headers = configured (heuristic)
+          { id: "anthropic", source: "custom", options: { apiKey: "", headers: { "anthropic-beta": "test" } }, models: [{ id: "claude-3" }] },
+          { id: "zai-coding", source: "api", models: [] },
+          { id: "groq", source: "custom", options: {}, models: [] },  // source=custom, empty options = NOT configured
+        ]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerProviderTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_list")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("2 configured");
+      expect(text).toContain("**Configured:**");
+      expect(text).toContain("anthropic: 1 model");
+      expect(text).toContain("zai-coding: 0 models");
+    });
+  });
+
+  describe("opencode_config_providers (compact)", () => {
+    it("returns compact summary instead of full model specs", async () => {
+      // API returns { providers: [...], default: { providerId: modelId } }
+      const getMock = vi.fn().mockResolvedValue({
+        providers: [
+          { id: "anthropic", name: "Anthropic", models: { "claude-3": {}, "claude-4": {} } },
+          { id: "openai", name: "OpenAI", models: { "gpt-4": {} } },
+        ],
+        default: { anthropic: "claude-3", openai: "gpt-4" },
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerConfigTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_config_providers")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("anthropic");
+      expect(text).toContain("2 models");
+      expect(text).toContain("default: claude-3");
+      expect(text).toContain("openai");
+      expect(text).toContain("1 model");
+      expect(text).toContain("opencode_provider_models");
     });
   });
 
@@ -672,6 +1082,465 @@ describe("Tool handlers", () => {
       const handler = tools.get("opencode_health")!;
       await handler({});
       expect(getMock).toHaveBeenCalledWith("/global/health", undefined, undefined);
+    });
+  });
+
+  describe("opencode_message_send (R5-B1 fix)", () => {
+    it("warns when response is empty (null)", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce(null),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerMessageTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_message_send")!;
+      const result = await handler({ sessionId: "s1", text: "hello" });
+      expect(result.content[0].text).toContain("WARNING");
+      expect(result.content[0].text).toContain("empty response");
+    });
+
+    it("warns when response has no text content", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce({ parts: [] }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerMessageTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_message_send")!;
+      const result = await handler({ sessionId: "s1", text: "hello" });
+      expect(result.content[0].text).toContain("WARNING");
+      expect(result.content[0].text).toContain("no text content");
+    });
+
+    it("does not warn for valid response with text", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce({
+          info: { id: "m1", role: "assistant" },
+          parts: [{ type: "text", text: "Here is the answer" }],
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerMessageTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_message_send")!;
+      const result = await handler({ sessionId: "s1", text: "hello" });
+      expect(result.content[0].text).toContain("Here is the answer");
+      expect(result.content[0].text).not.toContain("WARNING");
+    });
+
+    it("returns 'Empty response.' when formatted output is empty string", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce(null),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerMessageTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_message_send")!;
+      const result = await handler({ sessionId: "s1", text: "hello" });
+      // Should have the WARNING but also not be completely empty
+      expect(result.content[0].text.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("opencode_session_share (R5-B2 fix)", () => {
+    it("formats output with share URL instead of raw JSON", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce({
+          id: "session-1",
+          title: "My Session",
+          shareUrl: "https://opncd.ai/share/abc123",
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_share")!;
+      const result = await handler({ id: "session-1" });
+      const text = result.content[0].text;
+      expect(text).toContain("Session shared.");
+      expect(text).toContain("https://opncd.ai/share/abc123");
+      expect(text).toContain("session-1");
+      // Should NOT be raw JSON with curly braces
+      expect(text).not.toMatch(/^\{/);
+    });
+
+    it("handles share URL in nested share object", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce({
+          id: "session-2",
+          share: { url: "https://opncd.ai/share/xyz789" },
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_share")!;
+      const result = await handler({ id: "session-2" });
+      expect(result.content[0].text).toContain("https://opncd.ai/share/xyz789");
+    });
+
+    it("shows confirmation even without share URL", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValueOnce({ id: "session-3" }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_share")!;
+      const result = await handler({ id: "session-3" });
+      expect(result.content[0].text).toContain("Session shared.");
+    });
+  });
+
+  describe("opencode_session_unshare (R5-B3 fix)", () => {
+    it("returns confirmation message instead of raw JSON", async () => {
+      const mockClient = createMockClient({
+        delete: vi.fn().mockResolvedValueOnce(undefined),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_unshare")!;
+      const result = await handler({ id: "session-1" });
+      const text = result.content[0].text;
+      expect(text).toContain("Session session-1 unshared.");
+      // Should NOT be raw JSON
+      expect(text).not.toMatch(/^\{/);
+      expect(text).not.toContain("undefined");
+    });
+  });
+
+  describe("opencode_session_init (R5-B4 fix)", () => {
+    it("has timeout warning in description", () => {
+      const { tools } = captureTools(registerSessionTools);
+      const tool = tools.get("opencode_session_init")!;
+      expect(tool.description).toContain("long-running");
+    });
+  });
+
+  describe("opencode_session_summarize (R5-B5 fix)", () => {
+    it("has timeout warning in description", () => {
+      const { tools } = captureTools(registerSessionTools);
+      const tool = tools.get("opencode_session_summarize")!;
+      expect(tool.description).toContain("long-running");
+    });
+  });
+
+  // ─── New features ───────────────────────────────────────────────────
+
+  describe("opencode_provider_test", () => {
+    it("reports success when provider returns valid response", async () => {
+      const postMock = vi.fn()
+        .mockResolvedValueOnce({ id: "test-session" }) // create session
+        .mockResolvedValueOnce({ // send message
+          info: { id: "m1", role: "assistant" },
+          parts: [{ type: "text", text: "Hello" }],
+        });
+      const deleteMock = vi.fn().mockResolvedValue(undefined);
+      const mockClient = createMockClient({ post: postMock, delete: deleteMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_test")!;
+      const result = await handler({ providerId: "anthropic" });
+      const text = result.content[0].text;
+      expect(text).toContain("anthropic");
+      expect(text).toContain("is working");
+      expect(text).toContain("Hello");
+      // Should clean up the test session
+      expect(deleteMock).toHaveBeenCalled();
+    });
+
+    it("reports failure when provider returns empty response", async () => {
+      const postMock = vi.fn()
+        .mockResolvedValueOnce({ id: "test-session" })
+        .mockResolvedValueOnce(null); // empty response
+      const deleteMock = vi.fn().mockResolvedValue(undefined);
+      const mockClient = createMockClient({ post: postMock, delete: deleteMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_test")!;
+      const result = await handler({ providerId: "badprovider" });
+      const text = result.content[0].text;
+      expect(text).toContain("FAILED");
+      expect(text).toContain("badprovider");
+      expect(result.isError).toBe(true);
+      // Should still clean up
+      expect(deleteMock).toHaveBeenCalled();
+    });
+
+    it("cleans up test session even on API error", async () => {
+      const postMock = vi.fn()
+        .mockResolvedValueOnce({ id: "test-session" })
+        .mockRejectedValueOnce(new Error("API timeout"));
+      const deleteMock = vi.fn().mockResolvedValue(undefined);
+      const mockClient = createMockClient({ post: postMock, delete: deleteMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_provider_test")!;
+      const result = await handler({ providerId: "anthropic" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("API timeout");
+      // Should attempt cleanup
+      expect(deleteMock).toHaveBeenCalledWith("/session/test-session", undefined, undefined);
+    });
+  });
+
+  describe("opencode_session_search", () => {
+    const sessions = [
+      { id: "s1", title: "Fix login bug" },
+      { id: "s2", title: "Add dark mode feature" },
+      { id: "s3", title: "Refactor login component" },
+      { id: "s4", title: "Update README" },
+    ];
+
+    it("finds sessions matching keyword in title", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue(sessions),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_search")!;
+      const result = await handler({ query: "login" });
+      const text = result.content[0].text;
+      expect(text).toContain("2/4");
+      expect(text).toContain("Fix login bug");
+      expect(text).toContain("Refactor login component");
+      expect(text).not.toContain("dark mode");
+      expect(text).not.toContain("README");
+    });
+
+    it("performs case-insensitive search", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue(sessions),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_search")!;
+      const result = await handler({ query: "LOGIN" });
+      const text = result.content[0].text;
+      expect(text).toContain("2/4");
+      expect(text).toContain("Fix login bug");
+    });
+
+    it("searches by session ID too", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue(sessions),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_search")!;
+      const result = await handler({ query: "s2" });
+      const text = result.content[0].text;
+      expect(text).toContain("1/4");
+      expect(text).toContain("dark mode");
+    });
+
+    it("returns friendly message when no matches", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue(sessions),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_search")!;
+      const result = await handler({ query: "nonexistent" });
+      const text = result.content[0].text;
+      expect(text).toContain('No sessions matching: "nonexistent"');
+      expect(text).toContain("Total sessions: 4");
+    });
+
+    it("returns 'No sessions found.' when session list is empty", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue([]),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_search")!;
+      const result = await handler({ query: "anything" });
+      expect(result.content[0].text).toContain("No sessions found.");
+    });
+  });
+
+  describe("opencode_status", () => {
+    it("returns combined dashboard with all sections", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/global/health") return Promise.resolve({ version: "1.1.53" });
+          if (path === "/provider") return Promise.resolve({ all: [
+            { id: "anthropic", source: "env", models: [] },
+            { id: "groq", source: "custom", options: {}, models: [] },
+          ]});
+          if (path === "/session") return Promise.resolve([{ id: "s1" }, { id: "s2" }, { id: "s3" }]);
+          if (path === "/vcs") return Promise.resolve({ branch: "main", dirty: false });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("## Status");
+      expect(text).toContain("healthy");
+      expect(text).toContain("1.1.53");
+      expect(text).toContain("1 configured / 2 total");
+      expect(text).toContain("Sessions: 3");
+      expect(text).toContain("Branch: main (clean)");
+    });
+
+    it("handles partial failures gracefully", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/global/health") return Promise.resolve({ version: "1.0.0" });
+          return Promise.reject(new Error("not available"));
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("healthy");
+      // Other sections should just be missing, not cause errors
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("shows UNREACHABLE when health check fails", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("UNREACHABLE");
+    });
+
+    it("shows dirty branch status", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/global/health") return Promise.resolve({ version: "1.0.0" });
+          if (path === "/vcs") return Promise.resolve({ branch: "feature-x", dirty: true });
+          return Promise.reject(new Error("skip"));
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_status")!;
+      const result = await handler({});
+      expect(result.content[0].text).toContain("Branch: feature-x (dirty)");
     });
   });
 });

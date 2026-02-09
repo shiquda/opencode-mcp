@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolJson, toolError, toolResult, directoryParam } from "../helpers.js";
+import { toolJson, toolError, toolResult, directoryParam, isProviderConfigured } from "../helpers.js";
 
 export function registerProviderTools(
   server: McpServer,
@@ -15,25 +15,57 @@ export function registerProviderTools(
     },
     async ({ directory }) => {
       try {
-        const providers = (await client.get("/provider", undefined, directory)) as Array<
-          Record<string, unknown>
-        >;
-        if (!providers || providers.length === 0) {
+        const raw = await client.get("/provider", undefined, directory);
+        const providers = (
+          raw && typeof raw === "object" && "all" in (raw as Record<string, unknown>)
+            ? (raw as Record<string, unknown>).all
+            : raw
+        ) as Array<Record<string, unknown>>;
+
+        if (!Array.isArray(providers) || providers.length === 0) {
           return toolResult("No providers configured.");
         }
 
-        const lines = providers.map((p) => {
-          const id = p.id ?? p.name ?? "?";
-          const connected =
-            p.connected ?? p.authenticated ?? p.status === "connected";
-          const models = p.models as Array<Record<string, unknown>> | undefined;
-          const modelCount = models?.length ?? 0;
-          const status = connected ? "connected" : "not configured";
-          return `- ${id}: ${status} (${modelCount} model${modelCount !== 1 ? "s" : ""})`;
-        });
+        const countModels = (p: Record<string, unknown>) => {
+          const m = p.models;
+          return Array.isArray(m) ? m.length : m && typeof m === "object" ? Object.keys(m).length : 0;
+        };
+
+        const configured = providers.filter(isProviderConfigured);
+        const unconfigured = providers.filter((p) => !isProviderConfigured(p));
+
+        const lines: string[] = [];
+
+        if (configured.length > 0) {
+          lines.push("**Configured:**");
+          for (const p of configured) {
+            const id = p.id ?? p.name ?? "?";
+            const mc = countModels(p);
+            const envVars = Array.isArray(p.env) ? ` (via ${(p.env as string[]).join(", ")})` : "";
+            lines.push(`- ${id}: ${mc} model${mc !== 1 ? "s" : ""}${envVars}`);
+          }
+        } else {
+          lines.push("**No providers configured.** Use `opencode_auth_set` or set environment variables.");
+        }
+
+        if (unconfigured.length > 0) {
+          lines.push(`\n**Not configured:** ${unconfigured.length} more providers available`);
+          // Show up to 5 popular ones
+          const popularIds = new Set(["anthropic", "openai", "google", "openrouter", "groq", "deepseek", "mistral", "huggingface"]);
+          const popular = unconfigured.filter((p) => popularIds.has(p.id as string)).slice(0, 5);
+          if (popular.length > 0) {
+            for (const p of popular) {
+              const id = p.id ?? "?";
+              const mc = countModels(p);
+              lines.push(`- ${id}: ${mc} model${mc !== 1 ? "s" : ""}`);
+            }
+            const rest = unconfigured.length - popular.length;
+            if (rest > 0) lines.push(`- ... and ${rest} more`);
+          }
+        }
 
         return toolResult(
-          `## Providers (${providers.length})\n${lines.join("\n")}\n\nUse \`opencode_provider_models\` with a provider ID to see its models.`,
+          `## Providers (${configured.length} configured / ${providers.length} total)\n${lines.join("\n")}\n\nUse \`opencode_provider_models\` with a provider ID to see its models.`,
         );
       } catch (e) {
         return toolError(e);
@@ -48,49 +80,68 @@ export function registerProviderTools(
       providerId: z
         .string()
         .describe("Provider ID (e.g. 'anthropic', 'openrouter', 'google')"),
+      limit: z
+        .number()
+        .optional()
+        .describe("Max models to show (default 30). Use 0 for all."),
       directory: directoryParam,
     },
-    async ({ providerId, directory }) => {
+    async ({ providerId, limit, directory }) => {
       try {
-        const providers = (await client.get("/provider", undefined, directory)) as Array<
-          Record<string, unknown>
-        >;
-        const provider = providers?.find(
+        const raw = await client.get("/provider", undefined, directory);
+        const providers = (
+          raw && typeof raw === "object" && "all" in (raw as Record<string, unknown>)
+            ? (raw as Record<string, unknown>).all
+            : raw
+        ) as Array<Record<string, unknown>>;
+
+        if (!Array.isArray(providers)) {
+          return toolError("Unexpected provider response format.");
+        }
+
+        const provider = providers.find(
           (p) => (p.id ?? p.name) === providerId,
         );
 
         if (!provider) {
-          const available = providers
-            ?.map((p) => p.id ?? p.name)
-            .join(", ");
+          const allIds = providers.map((p) => p.id ?? p.name);
+          const shown = allIds.slice(0, 10);
+          const rest = allIds.length - shown.length;
+          const available = shown.join(", ") + (rest > 0 ? ` ... and ${rest} more` : "");
           return toolResult(
-            `Provider "${providerId}" not found. Available: ${available || "none"}`,
+            `Provider "${providerId}" not found. Available: ${available || "none"}\n\nUse \`opencode_provider_list\` to see all providers.`,
             true,
           );
         }
 
-        const connected =
-          provider.connected ??
-          provider.authenticated ??
-          provider.status === "connected";
-        const models = provider.models as
-          | Array<Record<string, unknown>>
-          | undefined;
+        const configured = isProviderConfigured(provider);
+        const rawModels = provider.models;
+        const modelList: Array<Record<string, unknown>> = Array.isArray(rawModels)
+          ? rawModels
+          : rawModels && typeof rawModels === "object"
+            ? Object.values(rawModels as Record<string, unknown>)
+            : [];
 
-        if (!models || models.length === 0) {
+        if (modelList.length === 0) {
           return toolResult(
-            `Provider "${providerId}" (${connected ? "connected" : "NOT CONFIGURED"}) has no models available.`,
+            `Provider "${providerId}" (${configured ? "configured" : "NOT CONFIGURED"}) has no models available.`,
           );
         }
 
-        const lines = models.map((m) => {
+        const maxItems = limit === 0 ? modelList.length : (limit ?? 30);
+        const shown = modelList.slice(0, maxItems);
+        const lines = shown.map((m: Record<string, unknown>) => {
           const id = m.id ?? m.name ?? "?";
           const name = m.name && m.name !== m.id ? ` — ${m.name}` : "";
           return `- ${id}${name}`;
         });
 
+        const truncNote = modelList.length > maxItems
+          ? `\n\n... and ${modelList.length - maxItems} more. Use \`limit: 0\` to see all.`
+          : "";
+
         return toolResult(
-          `## ${providerId} (${connected ? "connected" : "NOT CONFIGURED"}) — ${models.length} model${models.length !== 1 ? "s" : ""}\n${lines.join("\n")}`,
+          `## ${providerId} (${configured ? "configured" : "NOT CONFIGURED"}) — ${modelList.length} model${modelList.length !== 1 ? "s" : ""}\n${lines.join("\n")}${truncNote}`,
         );
       } catch (e) {
         return toolError(e);
@@ -106,7 +157,24 @@ export function registerProviderTools(
     },
     async ({ directory }) => {
       try {
-        return toolJson(await client.get("/provider/auth", undefined, directory));
+        const raw = await client.get("/provider/auth", undefined, directory);
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+          const entries = Object.entries(raw as Record<string, unknown>);
+          if (entries.length === 0) {
+            return toolResult("No authentication methods available.");
+          }
+          const lines = entries.map(([providerId, methods]) => {
+            const arr = Array.isArray(methods) ? methods as Array<Record<string, unknown>> : [];
+            const methodDescs = arr.map((m) => {
+              const type = m.type ?? "?";
+              const label = m.label ?? "";
+              return label ? `${type} (${label})` : String(type);
+            });
+            return `- ${providerId}: ${methodDescs.join(", ") || "none"}`;
+          });
+          return toolResult(`## Auth Methods (${entries.length} providers)\n${lines.join("\n")}`);
+        }
+        return toolJson(raw);
       } catch (e) {
         return toolError(e);
       }

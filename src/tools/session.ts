@@ -1,7 +1,41 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolJson, toolError, formatSessionList, toolResult, directoryParam } from "../helpers.js";
+import { toolError, formatSessionList, formatDiffResponse, toolResult, directoryParam } from "../helpers.js";
+
+/** Format a single session object into a compact human-readable summary. */
+function formatSession(raw: unknown): string {
+  const s = raw as Record<string, unknown>;
+  if (!s || typeof s !== "object") return JSON.stringify(raw);
+  const lines: string[] = [];
+  if (s.id) lines.push(`ID: ${s.id}`);
+  if (s.title) lines.push(`Title: ${s.title}`);
+  if (s.slug) lines.push(`Slug: ${s.slug}`);
+  if (s.parentID) lines.push(`Parent: ${s.parentID}`);
+  // Time field may be {created, updated} timestamps (ms since epoch)
+  const time = s.time as Record<string, unknown> | undefined;
+  if (time?.created) {
+    lines.push(`Created: ${new Date(time.created as number).toISOString()}`);
+  } else if (s.createdAt) {
+    lines.push(`Created: ${s.createdAt}`);
+  }
+  if (time?.updated) {
+    lines.push(`Updated: ${new Date(time.updated as number).toISOString()}`);
+  } else if (s.updatedAt) {
+    lines.push(`Updated: ${s.updatedAt}`);
+  }
+  if (s.status) lines.push(`Status: ${s.status}`);
+  if (s.version) lines.push(`Version: ${s.version}`);
+  if (s.directory) lines.push(`Directory: ${s.directory}`);
+  if (s.shareUrl) lines.push(`Share URL: ${s.shareUrl}`);
+  // Show summary if present
+  const summary = s.summary as Record<string, unknown> | string | undefined;
+  if (summary) {
+    const text = typeof summary === "string" ? summary : (summary as Record<string, unknown>)?.text;
+    if (text) lines.push(`Summary: ${String(text).slice(0, 200)}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : JSON.stringify(raw);
+}
 
 export function registerSessionTools(
   server: McpServer,
@@ -36,7 +70,8 @@ export function registerSessionTools(
         const body: Record<string, string> = {};
         if (parentID) body.parentID = parentID;
         if (title) body.title = title;
-        return toolJson(await client.post("/session", body, { directory }));
+        const session = await client.post("/session", body, { directory });
+        return toolResult(`Session created.\n\n${formatSession(session)}`);
       } catch (e) {
         return toolError(e);
       }
@@ -52,7 +87,8 @@ export function registerSessionTools(
     },
     async ({ id, directory }) => {
       try {
-        return toolJson(await client.get(`/session/${id}`, undefined, directory));
+        const session = await client.get(`/session/${id}`, undefined, directory);
+        return toolResult(formatSession(session));
       } catch (e) {
         return toolError(e);
       }
@@ -88,7 +124,8 @@ export function registerSessionTools(
       try {
         const body: Record<string, string> = {};
         if (title !== undefined) body.title = title;
-        return toolJson(await client.patch(`/session/${id}`, body, directory));
+        const updated = await client.patch(`/session/${id}`, body, directory);
+        return toolResult(formatSession(updated));
       } catch (e) {
         return toolError(e);
       }
@@ -104,7 +141,11 @@ export function registerSessionTools(
     },
     async ({ id, directory }) => {
       try {
-        return toolJson(await client.get(`/session/${id}/children`, undefined, directory));
+        const children = (await client.get(`/session/${id}/children`, undefined, directory)) as unknown[];
+        if (!children || !Array.isArray(children) || children.length === 0) {
+          return toolResult("No child sessions found.");
+        }
+        return toolResult(formatSessionList(children));
       } catch (e) {
         return toolError(e);
       }
@@ -119,7 +160,16 @@ export function registerSessionTools(
     },
     async ({ directory }) => {
       try {
-        return toolJson(await client.get("/session/status", undefined, directory));
+        const raw = await client.get("/session/status", undefined, directory);
+        const statuses = raw && typeof raw === "object" && !Array.isArray(raw)
+          ? raw as Record<string, unknown>
+          : {};
+        const entries = Object.entries(statuses);
+        if (entries.length === 0) {
+          return toolResult("All sessions idle.");
+        }
+        const lines = entries.map(([id, status]) => `- ${id}: ${status ?? "idle"}`);
+        return toolResult(`## Session Status (${entries.length})\n${lines.join("\n")}`);
       } catch (e) {
         return toolError(e);
       }
@@ -135,7 +185,20 @@ export function registerSessionTools(
     },
     async ({ id, directory }) => {
       try {
-        return toolJson(await client.get(`/session/${id}/todo`, undefined, directory));
+        const raw = await client.get(`/session/${id}/todo`, undefined, directory);
+        const todos = Array.isArray(raw) ? raw as Array<Record<string, unknown>> : [];
+        if (todos.length === 0) {
+          return toolResult("No todos for this session.");
+        }
+        const lines = todos.map((t) => {
+          const done = t.status === "completed" || t.done === true || t.completed === true;
+          const check = done ? "[x]" : "[ ]";
+          const content = t.content ?? t.title ?? t.text ?? t.description ?? "?";
+          const priority = t.priority ? ` (${t.priority})` : "";
+          return `- ${check} ${content}${priority}`;
+        });
+        const completed = todos.filter((t) => t.status === "completed" || t.done === true || t.completed === true).length;
+        return toolResult(`## Todos (${completed}/${todos.length} done)\n${lines.join("\n")}`);
       } catch (e) {
         return toolError(e);
       }
@@ -144,7 +207,7 @@ export function registerSessionTools(
 
   server.tool(
     "opencode_session_init",
-    "Analyze the app and create AGENTS.md for a session",
+    "Analyze the app and create AGENTS.md for a session. NOTE: This is a long-running operation that may take 30-60+ seconds depending on project size.",
     {
       id: z.string().describe("Session ID"),
       messageID: z.string().describe("Message ID"),
@@ -191,7 +254,8 @@ export function registerSessionTools(
       try {
         const body: Record<string, string> = {};
         if (messageID) body.messageID = messageID;
-        return toolJson(await client.post(`/session/${id}/fork`, body, { directory }));
+        const forked = await client.post(`/session/${id}/fork`, body, { directory });
+        return toolResult(`Session forked.\n\n${formatSession(forked)}`);
       } catch (e) {
         return toolError(e);
       }
@@ -207,7 +271,12 @@ export function registerSessionTools(
     },
     async ({ id, directory }) => {
       try {
-        return toolJson(await client.post(`/session/${id}/share`, undefined, { directory }));
+        const result = await client.post(`/session/${id}/share`, undefined, { directory });
+        const r = result as Record<string, unknown>;
+        // API may return share URL in different locations
+        const shareUrl = r.shareUrl ?? (r.share as Record<string, unknown> | undefined)?.url ?? null;
+        const header = shareUrl ? `Session shared.\nURL: ${shareUrl}` : "Session shared.";
+        return toolResult(`${header}\n\n${formatSession(result)}`);
       } catch (e) {
         return toolError(e);
       }
@@ -223,7 +292,8 @@ export function registerSessionTools(
     },
     async ({ id, directory }) => {
       try {
-        return toolJson(await client.delete(`/session/${id}/share`, undefined, directory));
+        await client.delete(`/session/${id}/share`, undefined, directory);
+        return toolResult(`Session ${id} unshared.`);
       } catch (e) {
         return toolError(e);
       }
@@ -242,7 +312,8 @@ export function registerSessionTools(
       try {
         const query: Record<string, string> = {};
         if (messageID) query.messageID = messageID;
-        return toolJson(await client.get(`/session/${id}/diff`, query, directory));
+        const diffs = await client.get(`/session/${id}/diff`, query, directory);
+        return toolResult(formatDiffResponse(diffs as unknown[]));
       } catch (e) {
         return toolError(e);
       }
@@ -251,7 +322,7 @@ export function registerSessionTools(
 
   server.tool(
     "opencode_session_summarize",
-    "Summarize a session using a specified model",
+    "Summarize a session using a specified model. NOTE: This is a long-running operation that may take 30-60+ seconds.",
     {
       id: z.string().describe("Session ID"),
       providerID: z.string().describe("Provider ID (e.g. 'anthropic')"),
@@ -322,6 +393,41 @@ export function registerSessionTools(
         if (remember !== undefined) body.remember = remember;
         await client.post(`/session/${id}/permissions/${permissionID}`, body, { directory });
         return toolResult("Permission response sent.");
+      } catch (e) {
+        return toolError(e);
+      }
+    },
+  );
+
+  // ─── Session search ─────────────────────────────────────────────────
+  server.tool(
+    "opencode_session_search",
+    "Search sessions by keyword in title. Useful for finding a specific session among many.",
+    {
+      query: z.string().describe("Search keyword (case-insensitive match on session title)"),
+      directory: directoryParam,
+    },
+    async ({ query, directory }) => {
+      try {
+        const sessions = (await client.get("/session", undefined, directory)) as Array<Record<string, unknown>>;
+        if (!sessions || sessions.length === 0) {
+          return toolResult("No sessions found.");
+        }
+
+        const q = query.toLowerCase();
+        const matches = sessions.filter((s) => {
+          const title = ((s.title ?? "") as string).toLowerCase();
+          const id = ((s.id ?? "") as string).toLowerCase();
+          return title.includes(q) || id.includes(q);
+        });
+
+        if (matches.length === 0) {
+          return toolResult(`No sessions matching: "${query}"\n\nTotal sessions: ${sessions.length}. Use \`opencode_session_list\` to see all.`);
+        }
+
+        return toolResult(
+          `## Sessions matching "${query}" (${matches.length}/${sessions.length})\n${formatSessionList(matches)}`,
+        );
       } catch (e) {
         return toolError(e);
       }

@@ -41,7 +41,7 @@ export function registerEventTools(
         const timeout = setTimeout(() => controller.abort(), duration);
 
         try {
-          for await (const evt of client.subscribeSSE("/event")) {
+          for await (const evt of client.subscribeSSE("/event", { signal: controller.signal })) {
             events.push(evt);
             if (events.length >= max) break;
             if (controller.signal.aborted) break;

@@ -11,6 +11,8 @@ import {
   formatMessageList,
   formatSessionList,
   analyzeMessageResponse,
+  isProviderConfigured,
+  redactSecrets,
   toolResult,
   toolError,
   directoryParam,
@@ -49,85 +51,110 @@ export function registerWorkflowTools(
           return toolResult(sections.join("\n\n"));
         }
 
-        // 2. Providers — which are connected?
+        // 2. Providers — categorize by readiness
         try {
-          const providers = (await client.get("/provider", undefined, directory)) as Array<Record<string, unknown>>;
-          if (providers && providers.length > 0) {
-            // Also fetch auth methods for richer status info
+          const raw = await client.get("/provider", undefined, directory);
+          const providers = (
+            raw && typeof raw === "object" && "all" in (raw as Record<string, unknown>)
+              ? (raw as Record<string, unknown>).all
+              : raw
+          ) as Array<Record<string, unknown>>;
+
+          if (Array.isArray(providers) && providers.length > 0) {
+            // Fetch auth methods for richer guidance
             let authMethods: Record<string, unknown> | null = null;
             try {
               authMethods = (await client.get("/provider/auth", undefined, directory)) as Record<string, unknown>;
             } catch { /* non-critical */ }
 
-            const lines = await Promise.all(
-              providers.map(async (p) => {
-                const id = (p.id ?? p.name ?? "?") as string;
-                const models = p.models as Array<Record<string, unknown>> | undefined;
-                const defaultModel = models && models.length > 0
-                  ? (models[0].id ?? models[0].name ?? "?")
-                  : "no models";
-                // Check if provider has auth configured
-                const connected = p.connected ?? p.authenticated ?? p.status === "connected";
+            // Helper to count models
+            const countModels = (p: Record<string, unknown>) => {
+              const m = p.models;
+              return Array.isArray(m) ? m.length : m && typeof m === "object" ? Object.keys(m).length : 0;
+            };
 
-                if (!connected) {
-                  // Determine available auth methods
-                  let authHint = "use opencode_auth_set to add API key";
-                  if (authMethods && Array.isArray(authMethods[id])) {
-                    const methods = (authMethods[id] as Array<Record<string, unknown>>)
-                      .map((m) => m.type ?? m.id ?? "?")
-                      .join(", ");
-                    authHint = `available auth: ${methods}`;
-                  }
-                  return `- ${id}: NOT CONFIGURED — ${authHint}`;
-                }
-
-                // Provider says connected — verify with a lightweight probe
-                let verified = "connected";
-                try {
-                  // Create a throwaway session, send a trivial prompt, check for content
-                  const session = (await client.post("/session", {
-                    title: `_probe_${id}`,
-                  }, { directory })) as Record<string, unknown>;
-                  const sessionId = session.id as string;
-
-                  const probeBody: Record<string, unknown> = {
-                    parts: [{ type: "text", text: "Reply with OK" }],
-                  };
-                  if (models && models.length > 0) {
-                    probeBody.model = {
-                      providerID: id,
-                      modelID: (models[0].id ?? models[0].name) as string,
-                    };
-                  }
-
-                  const probeResponse = await client.post(
-                    `/session/${sessionId}/message`,
-                    probeBody,
-                    { directory },
-                  );
-
-                  const analysis = analyzeMessageResponse(probeResponse);
-                  if (analysis.isEmpty || analysis.hasError) {
-                    verified = "CONNECTED BUT NOT RESPONDING — API key may be invalid or expired";
-                  } else {
-                    verified = "WORKING";
-                  }
-
-                  // Clean up probe session
-                  try {
-                    await client.delete(`/session/${sessionId}`, undefined, directory);
-                  } catch { /* best effort */ }
-                } catch {
-                  // If the probe throws (e.g. network error), just report connected
-                  verified = "connected (could not verify)";
-                }
-
-                return `- ${id}: ${verified} (${defaultModel})`;
-              }),
+            const ready = providers.filter(isProviderConfigured);
+            const withOAuth = providers.filter(
+              (p) => !ready.includes(p) && authMethods && Array.isArray(authMethods[p.id as string]),
             );
-            sections.push(`## Providers\n${lines.join("\n")}`);
+
+            // Popular providers worth highlighting (have free tiers or are well-known)
+            const popularIds = new Set([
+              "anthropic", "openai", "google", "firmware", "openrouter",
+              "groq", "deepseek", "huggingface", "github-copilot", "mistral",
+            ]);
+            const popular = providers.filter(
+              (p) => !ready.includes(p) && popularIds.has(p.id as string),
+            );
+            const otherCount = providers.length - ready.length - popular.length;
+
+            const providerLines: string[] = [];
+
+            // Section: Ready to use
+            if (ready.length > 0) {
+              providerLines.push("**Ready to use:**");
+              for (const p of ready) {
+                const id = p.id as string;
+                const name = p.name as string;
+                const mc = countModels(p);
+                const envVars = (p.env as string[])?.join(", ") ?? "";
+                providerLines.push(`- ${id} (${name}): detected via ${envVars} — ${mc} models`);
+              }
+            } else {
+              providerLines.push("**No providers configured yet.** You need at least one to start using OpenCode.");
+            }
+
+            // Section: Quick setup options
+            providerLines.push("");
+            providerLines.push("**Quick setup options:**");
+            for (const p of popular) {
+              const id = p.id as string;
+              const name = p.name as string;
+              const mc = countModels(p);
+              const envVars = (p.env as string[]) ?? [];
+              const envHint = envVars.length > 0 ? `set ${envVars[0]}` : "";
+
+              // Check for OAuth
+              const oauthAvailable = authMethods && Array.isArray(authMethods[id]);
+              const methods: string[] = [];
+              if (oauthAvailable) {
+                const labels = (authMethods![id] as Array<Record<string, unknown>>)
+                  .filter((m) => m.type === "oauth")
+                  .map((m) => m.label as string);
+                if (labels.length > 0) methods.push(`OAuth (${labels[0]})`);
+              }
+              if (envHint) methods.push(`\`opencode_auth_set\` or env var \`${envVars[0]}\``);
+
+              // Check for free models
+              const rawModels = p.models;
+              const modelValues = rawModels && typeof rawModels === "object" && !Array.isArray(rawModels)
+                ? Object.values(rawModels as Record<string, unknown>)
+                : Array.isArray(rawModels) ? rawModels : [];
+              const hasFree = modelValues.some(
+                (m) => {
+                  const cost = (m as Record<string, unknown>).cost as Record<string, unknown> | undefined;
+                  return cost && cost.input === 0 && cost.output === 0;
+                },
+              );
+              const freeTag = hasFree ? " [has free models]" : "";
+
+              providerLines.push(`- ${id} (${name}): ${mc} models${freeTag} — ${methods.join(" or ")}`);
+            }
+
+            // Mention OAuth-only providers not already listed
+            const oauthOnly = withOAuth.filter((p) => !popular.includes(p) && !ready.includes(p));
+            if (oauthOnly.length > 0) {
+              const names = oauthOnly.map((p) => `${p.id}`).join(", ");
+              providerLines.push(`- Also available via OAuth: ${names}`);
+            }
+
+            if (otherCount > 0) {
+              providerLines.push(`\n+${otherCount} more providers available. Use \`opencode_provider_list\` to see all.`);
+            }
+
+            sections.push(`## Providers (${providers.length} available)\n${providerLines.join("\n")}`);
           } else {
-            sections.push("## Providers\nNo providers found.");
+            sections.push("## Providers\nNo providers found. Is the server running correctly?");
           }
         } catch {
           sections.push("## Providers\nCould not fetch provider list.");
@@ -136,8 +163,12 @@ export function registerWorkflowTools(
         // 3. Project info (if directory given or from default)
         try {
           const project = (await client.get("/project/current", undefined, directory)) as Record<string, unknown>;
-          const name = project.name ?? project.id ?? "unknown";
-          const worktree = project.worktree ?? "unknown";
+          const worktree = (project.worktree ?? "unknown") as string;
+          // Derive a readable name: prefer project.name, then last dir component from worktree, then id
+          const name = project.name
+            ?? (worktree !== "unknown" ? worktree.split("/").filter(Boolean).pop() : null)
+            ?? project.id
+            ?? "unknown";
           const vcs = project.vcs ?? "none";
           sections.push(
             `## Project\nName: ${name}\nPath: ${worktree}\nVCS: ${vcs}`,
@@ -154,11 +185,27 @@ export function registerWorkflowTools(
           }
         }
 
-        // 4. Next steps guidance
+        // 4. Context-dependent next steps
         const tips: string[] = [];
-        tips.push("- Use `opencode_ask` with a `directory` parameter to start working on a project");
-        tips.push("- Use `opencode_auth_set` to configure API keys for providers");
-        tips.push("- Use `opencode_context` to get full project context (config, VCS, agents)");
+        const hasReady = sections.some((s) => s.includes("**Ready to use:**"));
+        const hasProject = sections.some((s) => s.startsWith("## Project\nName:"));
+
+        if (!hasReady) {
+          // No providers configured — guide them to set one up
+          tips.push("**You need to configure a provider first.** Options:");
+          tips.push("1. Set an API key: `opencode_auth_set` with providerId (e.g. 'anthropic', 'openai', 'google')");
+          tips.push("2. Set an env var (e.g. `OPENROUTER_API_KEY`, `HF_TOKEN`, `ANTHROPIC_API_KEY`) and restart opencode");
+          tips.push("3. Try **firmware** — it has 23 free models, no API key needed. Use `opencode_ask` with `providerID: 'firmware'`");
+        } else {
+          // Providers ready — guide to first task
+          tips.push("**You're ready to go!** Try:");
+          tips.push("- `opencode_ask` — ask a question or give an instruction (easiest way to start)");
+          if (!hasProject) {
+            tips.push("- Pass a `directory` parameter to target a specific project");
+          }
+          tips.push("- `opencode_context` — get full project context (config, VCS, agents)");
+          tips.push("- `opencode_provider_models` — explore available models for your configured providers");
+        }
         sections.push(`## Next Steps\n${tips.join("\n")}`);
 
         return toolResult(sections.join("\n\n"));
@@ -327,14 +374,23 @@ export function registerWorkflowTools(
           client.get("/session/status", undefined, directory) as Promise<Record<string, unknown>>,
         ]);
 
-        // Merge status into session info
-        const enriched = sessions.map((s) => ({
-          ...s,
-          status: statuses[s.id as string] ?? "unknown",
-        }));
+        if (!sessions || sessions.length === 0) {
+          return toolResult("No sessions found.");
+        }
 
-        const formatted = formatSessionList(enriched);
-        return toolResult(formatted);
+        // Merge status and show enriched overview
+        const lines = sessions.map((s) => {
+          const id = s.id ?? "?";
+          const title = s.title ?? "(untitled)";
+          const status = (statuses[id as string] ?? "idle") as string;
+          const createdAt = s.createdAt ? ` | created ${s.createdAt}` : "";
+          const parentTag = s.parentID ? ` (child of ${s.parentID})` : "";
+          return `- [${status}] ${title} [${id}]${parentTag}${createdAt}`;
+        });
+
+        return toolResult(
+          `## Sessions (${sessions.length})\n${lines.join("\n")}`,
+        );
       } catch (e) {
         return toolError(e);
       }
@@ -361,22 +417,51 @@ export function registerWorkflowTools(
         const sections: string[] = [];
 
         if (project) {
-          sections.push(
-            `## Project\n${JSON.stringify(project, null, 2)}`,
-          );
+          const p = project as Record<string, unknown>;
+          const worktree = (p.worktree ?? "unknown") as string;
+          const name = p.name
+            ?? (worktree !== "unknown" ? worktree.split("/").filter(Boolean).pop() : null)
+            ?? p.id ?? "unknown";
+          const lines = [`Name: ${name}`, `Path: ${worktree}`];
+          if (p.vcs) lines.push(`VCS: ${p.vcs}`);
+          if (p.id) lines.push(`ID: ${p.id}`);
+          sections.push(`## Project\n${lines.join("\n")}`);
         }
         if (path) {
-          sections.push(`## Path\n${JSON.stringify(path, null, 2)}`);
+          const pp = path as Record<string, unknown>;
+          const workDir = pp.worktree ?? pp.directory ?? pp.cwd ?? pp.path;
+          const pathLines: string[] = [];
+          if (workDir) pathLines.push(`Working directory: ${workDir}`);
+          if (pp.config && pp.config !== workDir) pathLines.push(`Config: ${pp.config}`);
+          if (pp.state && pp.state !== workDir) pathLines.push(`State: ${pp.state}`);
+          if (pp.home && pp.home !== workDir) pathLines.push(`Home: ${pp.home}`);
+          if (pathLines.length === 0) pathLines.push(`Working directory: ${JSON.stringify(pp)}`);
+          sections.push(`## Path\n${pathLines.join("\n")}`);
         }
         if (vcs) {
-          sections.push(
-            `## VCS (Git)\n${JSON.stringify(vcs, null, 2)}`,
-          );
+          const v = vcs as Record<string, unknown>;
+          const lines: string[] = [];
+          if (v.branch) lines.push(`Branch: ${v.branch}`);
+          if (v.remote) lines.push(`Remote: ${v.remote}`);
+          if (v.sha) lines.push(`HEAD: ${v.sha}`);
+          if (v.dirty !== undefined) lines.push(`Dirty: ${v.dirty}`);
+          sections.push(`## VCS (Git)\n${lines.length > 0 ? lines.join("\n") : "No VCS info available."}`);
         }
         if (config) {
-          sections.push(
-            `## Config\n${JSON.stringify(config, null, 2)}`,
-          );
+          // Show config summary with secrets redacted — skip overwhelming nested objects
+          const c = redactSecrets(config) as Record<string, unknown>;
+          const topLevel: string[] = [];
+          for (const [k, v] of Object.entries(c)) {
+            if (v && typeof v === "object" && !Array.isArray(v)) {
+              const keys = Object.keys(v as Record<string, unknown>);
+              topLevel.push(`${k}: {${keys.length} entries}`);
+            } else if (Array.isArray(v)) {
+              topLevel.push(`${k}: [${v.length} items]`);
+            } else {
+              topLevel.push(`${k}: ${v}`);
+            }
+          }
+          sections.push(`## Config\n${topLevel.join("\n")}`);
         }
         if (agents) {
           const agentList = agents as Array<Record<string, unknown>>;
@@ -473,6 +558,133 @@ export function registerWorkflowTools(
         const diffs = await client.get(`/session/${sessionId}/diff`, query, directory);
         const { formatDiffResponse } = await import("../helpers.js");
         return toolResult(formatDiffResponse(diffs as unknown[]));
+      } catch (e) {
+        return toolError(e);
+      }
+    },
+  );
+
+  // ─── Provider test ────────────────────────────────────────────────
+  server.tool(
+    "opencode_provider_test",
+    "Quick-test whether a provider is working. Creates a temporary session, sends a trivial prompt, checks the response, and cleans up. Great for debugging auth issues.",
+    {
+      providerId: z.string().describe("Provider ID to test (e.g. 'anthropic', 'openrouter')"),
+      modelID: z.string().optional().describe("Specific model ID to test. If omitted, uses provider default."),
+      directory: directoryParam,
+    },
+    async ({ providerId, modelID, directory }) => {
+      let sessionId: string | null = null;
+      try {
+        // 1. Create a temporary test session
+        const session = (await client.post("/session", {
+          title: `[test] ${providerId}`,
+        }, { directory })) as Record<string, unknown>;
+        sessionId = session.id as string;
+
+        // 2. Send a trivial prompt
+        const body: Record<string, unknown> = {
+          parts: [{ type: "text", text: "Say hello in one word." }],
+        };
+        // Use the specified model, or let the provider pick its default
+        if (modelID) {
+          body.model = { providerID: providerId, modelID };
+        } else {
+          body.providerID = providerId;
+        }
+
+        const response = await client.post(
+          `/session/${sessionId}/message`,
+          body,
+          { directory },
+        );
+
+        // 3. Analyze the response
+        const analysis = analyzeMessageResponse(response);
+        const formatted = formatMessageResponse(response);
+
+        // 4. Cleanup — delete test session
+        try {
+          await client.delete(`/session/${sessionId}`, undefined, directory);
+        } catch { /* best-effort cleanup */ }
+
+        if (analysis.hasError || analysis.isEmpty) {
+          const reason = analysis.warning ?? "Unknown error — no response received.";
+          return toolResult(
+            `Provider "${providerId}" FAILED.\n\n${reason}`,
+            true,
+          );
+        }
+
+        const preview = formatted.length > 200 ? formatted.slice(0, 200) + "..." : formatted;
+        return toolResult(
+          `Provider "${providerId}" is working.\n\nResponse: ${preview}`,
+        );
+      } catch (e) {
+        // Cleanup on error
+        if (sessionId) {
+          try {
+            await client.delete(`/session/${sessionId}`, undefined, directory);
+          } catch { /* best-effort cleanup */ }
+        }
+        return toolError(e);
+      }
+    },
+  );
+
+  // ─── Quick status dashboard ───────────────────────────────────────
+  server.tool(
+    "opencode_status",
+    "Get a quick status dashboard: server health, provider count, session count, and VCS info. Lighter than opencode_setup — good for at-a-glance checks.",
+    {
+      directory: directoryParam,
+    },
+    async ({ directory }) => {
+      try {
+        const [health, providerRaw, sessions, vcs] = await Promise.all([
+          client.get("/global/health", undefined, directory).catch(() => null),
+          client.get("/provider", undefined, directory).catch(() => null),
+          client.get("/session", undefined, directory).catch(() => null),
+          client.get("/vcs", undefined, directory).catch(() => null),
+        ]);
+
+        const lines: string[] = [];
+
+        // Health
+        if (health) {
+          const h = health as Record<string, unknown>;
+          lines.push(`Server: healthy (v${h.version ?? "?"})`);
+        } else {
+          lines.push("Server: UNREACHABLE");
+        }
+
+        // Providers
+        if (providerRaw) {
+          const providers = (
+            providerRaw && typeof providerRaw === "object" && "all" in (providerRaw as Record<string, unknown>)
+              ? (providerRaw as Record<string, unknown>).all
+              : providerRaw
+          ) as Array<Record<string, unknown>>;
+          if (Array.isArray(providers)) {
+            const configured = providers.filter(isProviderConfigured).length;
+            lines.push(`Providers: ${configured} configured / ${providers.length} total`);
+          }
+        }
+
+        // Sessions
+        if (sessions && Array.isArray(sessions)) {
+          lines.push(`Sessions: ${(sessions as unknown[]).length}`);
+        }
+
+        // VCS
+        if (vcs) {
+          const v = vcs as Record<string, unknown>;
+          const branch = v.branch ?? "unknown";
+          const dirty = v.dirty === true ? " (dirty)" : v.dirty === false ? " (clean)" : "";
+          lines.push(`Branch: ${branch}${dirty}`);
+        }
+
+        return toolResult(`## Status\n${lines.join("\n")}`);
       } catch (e) {
         return toolError(e);
       }

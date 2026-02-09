@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolJson, toolError, directoryParam } from "../helpers.js";
+import { toolResult, toolError, directoryParam } from "../helpers.js";
 
 export function registerGlobalTools(server: McpServer, client: OpenCodeClient) {
   server.tool(
@@ -11,7 +11,10 @@ export function registerGlobalTools(server: McpServer, client: OpenCodeClient) {
     },
     async ({ directory }) => {
       try {
-        return toolJson(await client.get("/global/health", undefined, directory));
+        const raw = await client.get("/global/health", undefined, directory) as Record<string, unknown>;
+        const status = raw.healthy ? "healthy" : "unhealthy";
+        const version = raw.version ?? "unknown";
+        return toolResult(`Status: ${status}\nVersion: ${version}`);
       } catch (e) {
         return toolError(e);
       }

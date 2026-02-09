@@ -5,6 +5,8 @@ import {
   formatDiffResponse,
   formatSessionList,
   analyzeMessageResponse,
+  isProviderConfigured,
+  redactSecrets,
   safeStringify,
   toolResult,
   toolError,
@@ -20,14 +22,13 @@ describe("formatMessageResponse", () => {
     expect(formatMessageResponse(undefined)).toBe("");
   });
 
-  it("formats message info section", () => {
+  it("omits verbose message info header for cleaner output", () => {
     const result = formatMessageResponse({
       info: { id: "msg-1", role: "assistant", createdAt: "2025-01-01" },
       parts: [],
     });
-    expect(result).toContain("[assistant]");
-    expect(result).toContain("msg-1");
-    expect(result).toContain("2025-01-01");
+    // Message header is now omitted — output should be empty for messages with no parts
+    expect(result).toBe("");
   });
 
   it("extracts text parts", () => {
@@ -96,13 +97,12 @@ describe("formatMessageResponse", () => {
     expect(result).toContain("[custom-type]");
   });
 
-  it("handles missing info gracefully", () => {
+  it("handles missing info gracefully and still extracts text", () => {
     const result = formatMessageResponse({
       info: { role: undefined, id: undefined },
       parts: [{ type: "text", text: "hello" }],
     });
-    expect(result).toContain("[unknown]");
-    expect(result).toContain("?");
+    // No header emitted, but text content is still extracted
     expect(result).toContain("hello");
   });
 });
@@ -326,6 +326,169 @@ describe("analyzeMessageResponse", () => {
     const result = analyzeMessageResponse({ info: { id: "m1" } });
     expect(result.isEmpty).toBe(true);
     expect(result.warning).toContain("no text content");
+  });
+});
+
+// ─── isProviderConfigured ─────────────────────────────────────────────────
+
+describe("isProviderConfigured", () => {
+  it("returns true for source=env", () => {
+    expect(isProviderConfigured({ id: "huggingface", source: "env" })).toBe(true);
+  });
+
+  it("returns true for source=config", () => {
+    expect(isProviderConfigured({ id: "google", source: "config" })).toBe(true);
+  });
+
+  it("returns true for source=api", () => {
+    expect(isProviderConfigured({ id: "zai-coding", source: "api" })).toBe(true);
+  });
+
+  it("returns true for source=custom with non-empty apiKey", () => {
+    expect(isProviderConfigured({ id: "opencode", source: "custom", options: { apiKey: "public" } })).toBe(true);
+  });
+
+  it("returns true for anthropic with OAuth headers (heuristic)", () => {
+    expect(isProviderConfigured({
+      id: "anthropic",
+      source: "custom",
+      options: { apiKey: "", headers: { "anthropic-beta": "test" } },
+    })).toBe(true);
+  });
+
+  it("returns false for source=custom with empty options", () => {
+    expect(isProviderConfigured({ id: "groq", source: "custom", options: {} })).toBe(false);
+  });
+
+  it("returns false for source=custom with only empty apiKey", () => {
+    expect(isProviderConfigured({ id: "deepseek", source: "custom", options: { apiKey: "" } })).toBe(false);
+  });
+
+  it("returns false when source is undefined", () => {
+    expect(isProviderConfigured({ id: "unknown" })).toBe(false);
+  });
+
+  it("returns false for non-anthropic provider with extra options but no apiKey", () => {
+    // The anthropic heuristic should NOT apply to other providers
+    expect(isProviderConfigured({
+      id: "openai",
+      source: "custom",
+      options: { apiKey: "", headers: { "some-header": "value" } },
+    })).toBe(false);
+  });
+});
+
+// ─── redactSecrets ───────────────────────────────────────────────────────
+
+describe("redactSecrets", () => {
+  it("redacts values with 'key' in the property name", () => {
+    const result = redactSecrets({ BRAVE_API_KEY: "sk-abc123456789" }) as Record<string, unknown>;
+    expect(result.BRAVE_API_KEY).toBe("sk-a***REDACTED***");
+  });
+
+  it("redacts values with 'token' in the property name", () => {
+    const result = redactSecrets({ HF_TOKEN: "hf_1234567890abcdef" }) as Record<string, unknown>;
+    expect(result.HF_TOKEN).toBe("hf_1***REDACTED***");
+  });
+
+  it("redacts values with 'secret' in the property name", () => {
+    const result = redactSecrets({ client_secret: "mysecretvalue123" }) as Record<string, unknown>;
+    expect(result.client_secret).toBe("myse***REDACTED***");
+  });
+
+  it("redacts values with 'password' in the property name", () => {
+    const result = redactSecrets({ db_password: "hunter2longpassword" }) as Record<string, unknown>;
+    expect(result.db_password).toBe("hunt***REDACTED***");
+  });
+
+  it("does not redact short values (<=8 chars)", () => {
+    const result = redactSecrets({ api_key: "short" }) as Record<string, unknown>;
+    expect(result.api_key).toBe("short");
+  });
+
+  it("does not redact non-sensitive keys", () => {
+    const result = redactSecrets({ theme: "dark", name: "my-project" }) as Record<string, unknown>;
+    expect(result.theme).toBe("dark");
+    expect(result.name).toBe("my-project");
+  });
+
+  it("redacts nested objects recursively", () => {
+    const result = redactSecrets({
+      mcp: {
+        servers: {
+          myserver: { api_key: "sk-longapikey123456" },
+        },
+      },
+    }) as any;
+    expect(result.mcp.servers.myserver.api_key).toBe("sk-l***REDACTED***");
+  });
+
+  it("handles arrays", () => {
+    const result = redactSecrets([{ token: "longtoken12345678" }]) as any[];
+    expect(result[0].token).toBe("long***REDACTED***");
+  });
+
+  it("handles null and undefined", () => {
+    expect(redactSecrets(null)).toBeNull();
+    expect(redactSecrets(undefined)).toBeUndefined();
+  });
+
+  it("passes through primitive values", () => {
+    expect(redactSecrets("hello")).toBe("hello");
+    expect(redactSecrets(42)).toBe(42);
+    expect(redactSecrets(true)).toBe(true);
+  });
+
+  // --- Value-level scanning (F2 fix) ---
+
+  it("redacts string values that look like API keys by prefix (sk-)", () => {
+    const result = redactSecrets({ url: "sk-proj-abcdef1234567890abcdef" }) as Record<string, unknown>;
+    expect(result.url).toBe("sk-p***REDACTED***");
+  });
+
+  it("redacts string values with known prefixes (tvly-, hf_, ghp_)", () => {
+    const r1 = redactSecrets({ value: "tvly-dev-qFDR0t05aBc1234567890" }) as Record<string, unknown>;
+    expect(r1.value).toBe("tvly***REDACTED***");
+
+    const r2 = redactSecrets({ value: "hf_abcdef1234567890" }) as Record<string, unknown>;
+    expect(r2.value).toBe("hf_a***REDACTED***");
+
+    const r3 = redactSecrets({ arg: "ghp_xyzw1234567890abcdefgh" }) as Record<string, unknown>;
+    expect(r3.arg).toBe("ghp_***REDACTED***");
+  });
+
+  it("redacts long hex/base64 token strings regardless of key name", () => {
+    const result = redactSecrets({ command: "abcdef1234567890ABCDEF1234567890ab" }) as Record<string, unknown>;
+    expect(result.command).toBe("abcd***REDACTED***");
+  });
+
+  it("does NOT redact short values even with known prefixes", () => {
+    const result = redactSecrets({ v: "sk-short" }) as Record<string, unknown>;
+    expect(result.v).toBe("sk-short");
+  });
+
+  it("redacts secrets in URL query parameters", () => {
+    const result = redactSecrets({
+      url: "https://api.example.com/mcp?tavilyApiKey=tvly-dev-qFDR0t05aBc1234567890",
+    }) as Record<string, unknown>;
+    const url = result.url as string;
+    expect(url).toContain("tavilyApiKey=tvly***REDACTED***");
+    expect(url).not.toContain("qFDR0t05");
+  });
+
+  it("redacts secrets in arrays (command args)", () => {
+    const result = redactSecrets(["npx", "-y", "some-tool", "sk-proj-abcdef1234567890abcdef"]) as string[];
+    expect(result[0]).toBe("npx");
+    expect(result[1]).toBe("-y");
+    expect(result[2]).toBe("some-tool");
+    expect(result[3]).toBe("sk-p***REDACTED***");
+  });
+
+  it("does not redact normal URL without secrets in params", () => {
+    const result = redactSecrets({
+      url: "https://example.com/api?format=json&page=1",
+    }) as Record<string, unknown>;
+    expect(result.url).toBe("https://example.com/api?format=json&page=1");
   });
 });
 
