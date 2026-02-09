@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-02-09
+
+### Added
+
+- `opencode_status` workflow tool for a fast health/providers/sessions/VCS dashboard
+- `opencode_provider_test` workflow tool to quickly validate a provider/model actually responds (creates a temp session, sends a tiny prompt, cleans up)
+- `opencode_session_search` to find sessions by keyword in title (also matches session ID)
+- `scripts/mcp-smoke-test.mjs` end-to-end smoke test runner (spawns opencode-mcp over stdio and exercises most tools/workflows against a running OpenCode server)
+
+### Changed
+
+- Provider configuration detection is now shared via `isProviderConfigured()` (used consistently across provider listing and setup workflows)
+- Multiple tool outputs are more token-efficient and user-friendly (compact provider list/model listing, session formatting, and warning surfacing)
+- Tool count: 75 (up from 72)
+- Tests: 229 total
+
+### Fixed
+
+- `opencode_message_send` no longer silently returns empty output for empty responses; it now appends actionable warnings like `opencode_ask`/`opencode_reply`
+- `opencode_session_share` / `opencode_session_unshare` now return formatted confirmations instead of raw JSON dumps
+- `opencode_events_poll` no longer crashes on timeout when the SSE stream is idle (abort now cancels the stream safely)
+
 ## [1.4.0] - 2025-02-09
 
 ### Added

@@ -9,7 +9,7 @@
  * providers, and more.
  *
  * Features:
- *  - 70+ tools covering the entire OpenCode API surface
+ *  - 75 tools covering the entire OpenCode API surface
  *  - High-level workflow tools (opencode_ask, opencode_reply, etc.)
  *  - Smart response formatting for LLM-friendly output
  *  - MCP Resources for browseable project data
@@ -58,10 +58,10 @@ const client = new OpenCodeClient({ baseUrl, username, password });
 
 const server = new McpServer({
   name: "opencode-mcp",
-  version: "1.4.0",
+  version: "1.5.0",
   description:
     "Full-featured MCP server wrapping the OpenCode AI headless HTTP server. " +
-    "Provides 70+ tools, resources, and prompts to manage sessions, send " +
+    "Provides 75 tools, resources, and prompts to manage sessions, send " +
     "prompts, search files, configure providers, control the TUI, monitor " +
     "events, and interact with the full OpenCode API. " +
     "All tools support a directory parameter for multi-project workflows. " +
@@ -113,7 +113,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `opencode-mcp v1.4.0 started (OpenCode server at ${baseUrl})`,
+    `opencode-mcp v1.5.0 started (OpenCode server at ${baseUrl})`,
   );
 }
 
