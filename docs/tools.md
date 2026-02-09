@@ -1,10 +1,13 @@
 # Tools Reference
 
-Complete reference for all 70 tools provided by opencode-mcp.
+Complete reference for all 75 tools provided by opencode-mcp.
+
+Note: Unless otherwise stated, every tool accepts an optional `directory` parameter (absolute path) to target a specific project.
 
 ## Table of Contents
 
 - [Workflow Tools](#workflow-tools)
+- [Project Tools](#project-tools)
 - [Session Tools](#session-tools)
 - [Message Tools](#message-tools)
 - [File & Search Tools](#file--search-tools)
@@ -19,6 +22,14 @@ Complete reference for all 70 tools provided by opencode-mcp.
 ## Workflow Tools
 
 High-level tools that combine multiple API calls into single, LLM-friendly operations.
+
+### `opencode_setup`
+
+Check OpenCode server health, provider configuration, and (if available) project status. Use this as the first tool call when starting work.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | no | Target project directory |
 
 ### `opencode_ask`
 
@@ -116,6 +127,28 @@ Get a **formatted diff summary** of file changes in a session.
 
 ---
 
+### `opencode_provider_test`
+
+Quick-test whether a provider is working. Creates a temporary session, sends a trivial prompt, checks the response, and cleans up.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `providerId` | string | yes | Provider ID to test |
+| `modelID` | string | no | Optional model ID (if omitted, provider default is used) |
+| `directory` | string | no | Target project directory |
+
+---
+
+### `opencode_status`
+
+At-a-glance status dashboard (health, provider count, session count, VCS).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | no | Target project directory |
+
+---
+
 ## Session Tools
 
 Full lifecycle management of OpenCode sessions.
@@ -123,6 +156,15 @@ Full lifecycle management of OpenCode sessions.
 ### `opencode_session_list`
 
 List all sessions with titles and IDs.
+
+### `opencode_session_search`
+
+Search sessions by keyword in title (case-insensitive). Also matches on session ID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | yes | Search keyword |
+| `directory` | string | no | Target project directory |
 
 ### `opencode_session_create`
 
@@ -168,7 +210,7 @@ Get status (`running`, `idle`, `completed`, `error`) for all sessions.
 
 ### `opencode_session_init`
 
-Analyze the project and create `AGENTS.md`.
+Analyze the project and create `AGENTS.md`. NOTE: This is a long-running operation and may take 30-60+ seconds depending on project size.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -204,6 +246,8 @@ Analyze the project and create `AGENTS.md`.
 | `messageID` | string | no | Specific message |
 
 ### `opencode_session_summarize`
+
+NOTE: This is a long-running operation and may take 30-60+ seconds.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -332,6 +376,26 @@ Get VCS status for all tracked files. No parameters.
 
 ---
 
+## Project Tools
+
+### `opencode_project_list`
+
+List all projects known to the OpenCode server.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | no | Target project directory |
+
+### `opencode_project_current`
+
+Get the current active project.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | no | Target project directory |
+
+---
+
 ## Config Tools
 
 ### `opencode_config_get`
@@ -354,7 +418,21 @@ List configured providers and default models. No parameters.
 
 ### `opencode_provider_list`
 
-List all providers, models, and connection status. No parameters.
+List providers with a compact configured/not-configured summary.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `directory` | string | no | Target project directory |
+
+### `opencode_provider_models`
+
+List available models for a specific provider.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `providerId` | string | yes | Provider ID |
+| `limit` | number | no | Max models to show (use `0` for all; default 30) |
+| `directory` | string | no | Target project directory |
 
 ### `opencode_provider_auth_methods`
 

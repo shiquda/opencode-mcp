@@ -22,14 +22,14 @@ src/
 ├── resources.ts          MCP Resources (10 browseable data endpoints)
 ├── prompts.ts            MCP Prompts (5 guided workflow templates)
 └── tools/
-    ├── workflow.ts       High-level workflow tools (7) — start here
-    ├── session.ts        Session lifecycle management (18)
+    ├── workflow.ts       High-level workflow tools (10) — start here
+    ├── session.ts        Session lifecycle management (19)
     ├── message.ts        Message/prompt operations (6)
     ├── file.ts           File and search operations (6)
     ├── tui.ts            TUI remote control (9)
     ├── config.ts         Configuration management (3)
-    ├── provider.ts       Provider and authentication (5)
-    ├── misc.ts           System, agents, LSP, MCP, logging (13)
+    ├── provider.ts       Provider and authentication (6)
+    ├── misc.ts           System, agents, LSP, MCP, logging (12)
     ├── events.ts         SSE event polling (1)
     ├── global.ts         Health check (1)
     └── project.ts        Project operations (2)
@@ -73,7 +73,7 @@ The server uses all three MCP primitives:
 
 | Primitive | Count | Purpose |
 |---|---|---|
-| **Tools** | 70 | Actions the LLM can take |
+| **Tools** | 75 | Actions the LLM can take |
 | **Resources** | 10 | Data the LLM can browse |
 | **Prompts** | 5 | Guided multi-step workflows |
 

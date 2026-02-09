@@ -170,5 +170,5 @@ If the OpenCode server is on a different host or port:
 ## Next Steps
 
 - [Configuration](configuration.md) — all environment variables and advanced config
-- [Tools Reference](tools.md) — detailed reference for all 70 tools
+- [Tools Reference](tools.md) — detailed reference for all 75 tools
 - [Usage Examples](examples.md) — real workflow examples
