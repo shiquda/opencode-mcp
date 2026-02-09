@@ -13,6 +13,7 @@ import {
   analyzeMessageResponse,
   isProviderConfigured,
   redactSecrets,
+  resolveSessionStatus,
   toolResult,
   toolError,
   directoryParam,
@@ -382,10 +383,9 @@ export function registerWorkflowTools(
         const lines = sessions.map((s) => {
           const id = s.id ?? "?";
           const title = s.title ?? "(untitled)";
-          const status = (statuses[id as string] ?? "idle") as string;
-          const createdAt = s.createdAt ? ` | created ${s.createdAt}` : "";
+          const status = resolveSessionStatus(statuses[id as string]);
           const parentTag = s.parentID ? ` (child of ${s.parentID})` : "";
-          return `- [${status}] ${title} [${id}]${parentTag}${createdAt}`;
+          return `- [${status}] ${title} [${id}]${parentTag}`;
         });
 
         return toolResult(
@@ -504,9 +504,9 @@ export function registerWorkflowTools(
             string,
             unknown
           >;
-          const status = statuses[sessionId] as string | undefined;
+          const status = resolveSessionStatus(statuses[sessionId]);
 
-          if (!status || status === "idle" || status === "completed") {
+          if (status === "idle" || status === "completed") {
             // Fetch latest messages
             const messages = await client.get(
               `/session/${sessionId}/message`,
@@ -530,7 +530,8 @@ export function registerWorkflowTools(
         }
 
         return toolResult(
-          `Timeout: session still processing after ${timeoutSeconds ?? 120}s`,
+          `Timeout: session still processing after ${timeoutSeconds ?? 120}s. ` +
+          `Use \`opencode_conversation\` to check progress, or \`opencode_session_abort\` to stop it.`,
           true,
         );
       } catch (e) {

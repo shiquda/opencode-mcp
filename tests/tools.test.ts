@@ -1448,6 +1448,267 @@ describe("Tool handlers", () => {
     });
   });
 
+  describe("opencode_sessions_overview (v1.6.0 — resolveSessionStatus)", () => {
+    it("resolves status objects instead of showing [object Object]", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve([
+            { id: "s1", title: "Fix bug" },
+            { id: "s2", title: "Add feature" },
+          ]);
+          if (path === "/session/status") return Promise.resolve({
+            s1: { state: "running" },
+            s2: { state: "idle" },
+          });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_sessions_overview")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("[running] Fix bug");
+      expect(text).toContain("[idle] Add feature");
+      expect(text).not.toContain("[object Object]");
+    });
+
+    it("handles string status values normally", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve([
+            { id: "s1", title: "Session A" },
+          ]);
+          if (path === "/session/status") return Promise.resolve({
+            s1: "running",
+          });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_sessions_overview")!;
+      const result = await handler({});
+      expect(result.content[0].text).toContain("[running] Session A");
+    });
+
+    it("falls back to idle for null/undefined status", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve([
+            { id: "s1", title: "Orphan session" },
+          ]);
+          if (path === "/session/status") return Promise.resolve({});
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_sessions_overview")!;
+      const result = await handler({});
+      expect(result.content[0].text).toContain("[idle] Orphan session");
+    });
+
+    it("returns 'No sessions found.' when empty", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve([]);
+          if (path === "/session/status") return Promise.resolve({});
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_sessions_overview")!;
+      const result = await handler({});
+      expect(result.content[0].text).toContain("No sessions found.");
+    });
+
+    it("shows parent tag for child sessions", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve([
+            { id: "child-1", title: "Sub-task", parentID: "parent-1" },
+          ]);
+          if (path === "/session/status") return Promise.resolve({ "child-1": "idle" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_sessions_overview")!;
+      const result = await handler({});
+      expect(result.content[0].text).toContain("(child of parent-1)");
+    });
+  });
+
+  describe("opencode_session_status (v1.6.0 — object status resolution)", () => {
+    it("resolves object statuses with { state } field", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockResolvedValue({
+          "session-1": { state: "running" },
+          "session-2": { state: "idle" },
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerSessionTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_session_status")!;
+      const result = await handler({});
+      const text = result.content[0].text;
+      expect(text).toContain("session-1: running");
+      expect(text).toContain("session-2: idle");
+      expect(text).not.toContain("[object Object]");
+    });
+  });
+
+  describe("opencode_wait (v1.6.0 — status resolution + timeout message)", () => {
+    it("detects completion from object status { state: 'idle' }", async () => {
+      const getMock = vi.fn().mockImplementation((path: string) => {
+        if (path === "/session/status") return Promise.resolve({
+          "s1": { state: "idle" },
+        });
+        if (path.includes("/message")) return Promise.resolve([
+          { info: { id: "m1", role: "assistant" }, parts: [{ type: "text", text: "Done!" }] },
+        ]);
+        return Promise.resolve({});
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_wait")!;
+      const result = await handler({ sessionId: "s1", timeoutSeconds: 5, pollIntervalMs: 50 });
+      const text = result.content[0].text;
+      expect(text).toContain("Session completed");
+      expect(text).toContain("Done!");
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("detects error from object status { state: 'error' }", async () => {
+      const getMock = vi.fn().mockResolvedValue({
+        "s1": { state: "error" },
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_wait")!;
+      const result = await handler({ sessionId: "s1", timeoutSeconds: 5, pollIntervalMs: 50 });
+      expect(result.content[0].text).toContain("error status");
+      expect(result.isError).toBe(true);
+    });
+
+    it("times out with actionable suggestions", async () => {
+      const getMock = vi.fn().mockResolvedValue({
+        "s1": { state: "running" },
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_wait")!;
+      const result = await handler({ sessionId: "s1", timeoutSeconds: 1, pollIntervalMs: 200 });
+      const text = result.content[0].text;
+      expect(text).toContain("Timeout");
+      expect(text).toContain("opencode_conversation");
+      expect(text).toContain("opencode_session_abort");
+      expect(result.isError).toBe(true);
+    });
+
+    it("completes when string status is 'idle'", async () => {
+      const getMock = vi.fn().mockImplementation((path: string) => {
+        if (path === "/session/status") return Promise.resolve({ "s1": "idle" });
+        if (path.includes("/message")) return Promise.resolve([
+          { info: { id: "m1", role: "assistant" }, parts: [{ type: "text", text: "Result" }] },
+        ]);
+        return Promise.resolve({});
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_wait")!;
+      const result = await handler({ sessionId: "s1", timeoutSeconds: 5, pollIntervalMs: 50 });
+      expect(result.content[0].text).toContain("Session completed");
+    });
+
+    it("returns 'no messages' when completed but message list is empty", async () => {
+      const getMock = vi.fn().mockImplementation((path: string) => {
+        if (path === "/session/status") return Promise.resolve({ "s1": "completed" });
+        if (path.includes("/message")) return Promise.resolve([]);
+        return Promise.resolve({});
+      });
+      const mockClient = createMockClient({ get: getMock });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
+          tools.set(_n, h);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_wait")!;
+      const result = await handler({ sessionId: "s1", timeoutSeconds: 5, pollIntervalMs: 50 });
+      expect(result.content[0].text).toContain("no messages");
+    });
+  });
+
   describe("opencode_status", () => {
     it("returns combined dashboard with all sections", async () => {
       const mockClient = createMockClient({

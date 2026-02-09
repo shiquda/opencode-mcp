@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolError, formatSessionList, formatDiffResponse, toolResult, directoryParam } from "../helpers.js";
+import { toolError, formatSessionList, formatDiffResponse, resolveSessionStatus, toolResult, directoryParam } from "../helpers.js";
 
 /** Format a single session object into a compact human-readable summary. */
 function formatSession(raw: unknown): string {
@@ -168,7 +168,7 @@ export function registerSessionTools(
         if (entries.length === 0) {
           return toolResult("All sessions idle.");
         }
-        const lines = entries.map(([id, status]) => `- ${id}: ${status ?? "idle"}`);
+        const lines = entries.map(([id, status]) => `- ${id}: ${resolveSessionStatus(status)}`);
         return toolResult(`## Session Status (${entries.length})\n${lines.join("\n")}`);
       } catch (e) {
         return toolError(e);

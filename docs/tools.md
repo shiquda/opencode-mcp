@@ -75,7 +75,7 @@ Get the **full conversation history** of a session, formatted for easy reading.
 
 ### `opencode_sessions_overview`
 
-Get a **quick overview** of all sessions with titles, IDs, and status.
+Get a **quick overview** of all sessions with titles, IDs, and status. Status values are correctly resolved from object shapes (e.g. `{ state: "running" }`) returned by the API — no more `[object Object]`.
 
 *No parameters.*
 
@@ -106,7 +106,7 @@ Get **full project context** in one call: project info, path, VCS, config, and a
 
 ### `opencode_wait`
 
-**Poll a session** until it finishes processing. Use after `opencode_message_send_async`.
+**Poll a session** until it finishes processing. Use after `opencode_message_send_async`. On timeout, provides actionable suggestions (`opencode_conversation` to check progress, `opencode_session_abort` to stop).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

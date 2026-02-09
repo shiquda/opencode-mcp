@@ -7,6 +7,7 @@ import {
   analyzeMessageResponse,
   isProviderConfigured,
   redactSecrets,
+  resolveSessionStatus,
   safeStringify,
   toolResult,
   toolError,
@@ -138,7 +139,7 @@ describe("formatMessageList", () => {
     expect(result).toContain("Hello!");
   });
 
-  it("counts tool calls", () => {
+  it("counts tool calls when text is also present", () => {
     const messages = [
       {
         info: { role: "assistant", id: "m1" },
@@ -151,6 +152,121 @@ describe("formatMessageList", () => {
     ];
     const result = formatMessageList(messages);
     expect(result).toContain("2 tool call(s)");
+    expect(result).toContain("Let me check");
+  });
+
+  it("shows tool summaries when text is empty (the empty-message bug)", () => {
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "text", text: "" },
+          { type: "tool-invocation", toolName: "Write", input: { path: "/src/App.tsx" } },
+          { type: "tool-result", toolName: "Write" },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("Agent performed 2 action(s)");
+    expect(result).toContain("Write: /src/App.tsx");
+  });
+
+  it("shows tool summaries when there are no text parts at all", () => {
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "tool-invocation", toolName: "Bash", input: { command: "npm install" } },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("Agent performed 1 action(s)");
+    expect(result).toContain("Bash: npm install");
+  });
+
+  it("shows (no content) when parts array is empty", () => {
+    const messages = [
+      { info: { role: "assistant", id: "m1" }, parts: [] },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("(no content)");
+  });
+
+  it("truncates long tool input hints to 80 chars", () => {
+    const longPath = "/very/long/path/that/goes/on/and/on/and/on/and/repeats/many/times/so/it/exceeds/eighty/chars.tsx";
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "tool-invocation", toolName: "Write", input: { path: longPath } },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("...");
+    expect(result.length).toBeLessThan(longPath.length + 200);
+  });
+
+  it("caps tool summaries at 10 and shows overflow count", () => {
+    const toolParts = Array.from({ length: 15 }, (_, i) => ({
+      type: "tool-invocation",
+      toolName: `Tool${i}`,
+      input: { path: `/file${i}.ts` },
+    }));
+    const messages = [
+      { info: { role: "assistant", id: "m1" }, parts: toolParts },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("Agent performed 15 action(s)");
+    expect(result).toContain("... and 5 more");
+    expect(result).toContain("Tool0");
+    expect(result).toContain("Tool9");
+    expect(result).not.toContain("Tool10:");
+  });
+
+  it("marks tool errors in summaries", () => {
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "tool-result", toolName: "Bash", error: "command not found" },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("Bash");
+    expect(result).toContain("ERROR");
+  });
+
+  it("appends cost metadata from step-finish parts", () => {
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "text", text: "Done!" },
+          { type: "step-finish", cost: 0.0023, tokens: { input: 1500, output: 200 } },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("cost: $0.0023");
+    expect(result).toContain("tokens: 1500 in, 200 out");
+  });
+
+  it("prefers command/query/url hints from tool input", () => {
+    const messages = [
+      {
+        info: { role: "assistant", id: "m1" },
+        parts: [
+          { type: "tool-invocation", toolName: "Search", input: { query: "todo context" } },
+          { type: "tool-invocation", toolName: "Fetch", input: { url: "https://example.com" } },
+        ],
+      },
+    ];
+    const result = formatMessageList(messages);
+    expect(result).toContain("Search: todo context");
+    expect(result).toContain("Fetch: https://example.com");
   });
 });
 
@@ -549,18 +665,116 @@ describe("toolResult", () => {
 describe("toolError", () => {
   it("extracts message from Error instances", () => {
     const result = toolError(new Error("something broke"));
-    expect(result.content[0].text).toBe("Error: something broke");
+    expect(result.content[0].text).toContain("Error: something broke");
     expect(result.isError).toBe(true);
   });
 
   it("converts non-Error values to string", () => {
     const result = toolError("string error");
-    expect(result.content[0].text).toBe("Error: string error");
+    expect(result.content[0].text).toContain("Error: string error");
   });
 
   it("handles numbers", () => {
     const result = toolError(404);
-    expect(result.content[0].text).toBe("Error: 404");
+    expect(result.content[0].text).toContain("Error: 404");
+  });
+
+  // ── Auto-suggestion tests ──────────────────────────────────────────
+
+  it("suggests auth fix for 401 errors", () => {
+    const result = toolError(new Error("Request failed with status 401"));
+    expect(result.content[0].text).toContain("Suggestions");
+    expect(result.content[0].text).toContain("opencode_provider_test");
+    expect(result.content[0].text).toContain("opencode_auth_set");
+  });
+
+  it("suggests auth fix for API key errors", () => {
+    const result = toolError(new Error("Invalid API key provided"));
+    expect(result.content[0].text).toContain("Suggestions");
+    expect(result.content[0].text).toContain("opencode_auth_set");
+  });
+
+  it("suggests async pattern for timeout errors", () => {
+    const result = toolError(new Error("Request timed out after 120s"));
+    expect(result.content[0].text).toContain("Suggestions");
+    expect(result.content[0].text).toContain("opencode_message_send_async");
+    expect(result.content[0].text).toContain("opencode_conversation");
+  });
+
+  it("suggests session list for session not found", () => {
+    const result = toolError(new Error("Session not found: ses_abc123"));
+    expect(result.content[0].text).toContain("opencode_sessions_overview");
+  });
+
+  it("suggests rate limit workaround for 429 errors", () => {
+    const result = toolError(new Error("Rate limit exceeded (429)"));
+    expect(result.content[0].text).toContain("Suggestions");
+    expect(result.content[0].text).toContain("minimax-m2.1-free");
+  });
+
+  it("suggests server check for connection errors", () => {
+    const result = toolError(new Error("fetch failed: ECONNREFUSED"));
+    expect(result.content[0].text).toContain("opencode_setup");
+  });
+
+  it("does not add suggestions for generic errors", () => {
+    const result = toolError(new Error("Something unexpected happened"));
+    expect(result.content[0].text).toBe("Error: Something unexpected happened");
+    expect(result.content[0].text).not.toContain("Suggestions");
+  });
+});
+
+// ─── resolveSessionStatus ─────────────────────────────────────────────────
+
+describe("resolveSessionStatus", () => {
+  it("returns 'idle' for null/undefined", () => {
+    expect(resolveSessionStatus(null)).toBe("idle");
+    expect(resolveSessionStatus(undefined)).toBe("idle");
+  });
+
+  it("returns the string directly when status is a string", () => {
+    expect(resolveSessionStatus("running")).toBe("running");
+    expect(resolveSessionStatus("idle")).toBe("idle");
+    expect(resolveSessionStatus("completed")).toBe("completed");
+  });
+
+  it("extracts .state from status objects", () => {
+    expect(resolveSessionStatus({ state: "running" })).toBe("running");
+    expect(resolveSessionStatus({ state: "idle" })).toBe("idle");
+  });
+
+  it("extracts .status from status objects", () => {
+    expect(resolveSessionStatus({ status: "error" })).toBe("error");
+  });
+
+  it("extracts .type from status objects", () => {
+    expect(resolveSessionStatus({ type: "processing" })).toBe("processing");
+  });
+
+  it("detects running from boolean flag", () => {
+    expect(resolveSessionStatus({ running: true })).toBe("running");
+  });
+
+  it("detects done from boolean flag", () => {
+    expect(resolveSessionStatus({ done: true })).toBe("completed");
+  });
+
+  it("detects error from boolean flag", () => {
+    expect(resolveSessionStatus({ error: true })).toBe("error");
+  });
+
+  it("returns 'unknown' for unrecognisable objects", () => {
+    expect(resolveSessionStatus({ foo: "bar" })).toBe("unknown");
+    expect(resolveSessionStatus({})).toBe("unknown");
+  });
+
+  it("returns 'unknown' for non-string/non-object types", () => {
+    expect(resolveSessionStatus(42)).toBe("unknown");
+    expect(resolveSessionStatus(true)).toBe("unknown");
+  });
+
+  it("prefers .state over boolean flags", () => {
+    expect(resolveSessionStatus({ state: "idle", running: true })).toBe("idle");
   });
 });
 

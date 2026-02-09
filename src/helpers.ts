@@ -86,6 +86,11 @@ export function formatMessageResponse(response: unknown): string {
 
 /**
  * Format a list of messages, extracting text content from each.
+ *
+ * When the assistant message has no text content (common with some providers
+ * that only emit tool calls), we show a concise summary of tool actions
+ * instead of blank output.  Cost/token metadata from step-finish parts is
+ * appended when available.
  */
 export function formatMessageList(
   messages: unknown[],
@@ -98,22 +103,88 @@ export function formatMessageList(
       const role = msg?.info?.role ?? "unknown";
       const id = msg?.info?.id ?? "?";
       const parts = Array.isArray(msg?.parts) ? msg.parts : [];
+
       const textParts = parts
         .filter((p: any) => p.type === "text")
-        .map((p: any) => p.text ?? p.content ?? "")
-        .join("");
+        .map((p: any) => (p.text ?? p.content ?? "").trim())
+        .filter(Boolean)
+        .join("\n");
+
       const toolParts = parts.filter(
         (p: any) => p.type === "tool-invocation" || p.type === "tool-result",
       );
 
+      // Extract cost/token metadata from step-finish parts
+      const costMeta = extractCostMeta(parts);
+
       let summary = `--- Message ${i + 1} [${role}] (${id}) ---\n`;
-      if (textParts) summary += textParts;
-      if (toolParts.length > 0) {
-        summary += `\n[${toolParts.length} tool call(s)]`;
+
+      if (textParts) {
+        summary += textParts;
+        if (toolParts.length > 0) {
+          summary += `\n[${toolParts.length} tool call(s)]`;
+        }
+      } else if (toolParts.length > 0) {
+        // No text but agent performed actions — show concise tool summaries
+        const toolSummaries = toolParts.slice(0, 10).map((p: any) => {
+          const name = p.toolName ?? "unknown";
+          // Extract the most useful arg (file path, command, etc.)
+          const hint = summarizeToolInput(p.input);
+          const errTag = p.error ? " ERROR" : "";
+          return `  ${name}${hint ? `: ${hint}` : ""}${errTag}`;
+        });
+        summary += `Agent performed ${toolParts.length} action(s):\n${toolSummaries.join("\n")}`;
+        if (toolParts.length > 10) {
+          summary += `\n  ... and ${toolParts.length - 10} more`;
+        }
+      } else {
+        summary += "(no content)";
       }
+
+      if (costMeta) summary += `\n${costMeta}`;
+
       return summary;
     })
     .join("\n\n");
+}
+
+/**
+ * Extract a short hint from a tool-call input object.
+ * Prefers path, command, file, query — the most informative single arg.
+ */
+function summarizeToolInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const obj = input as Record<string, unknown>;
+  // Ordered by likely usefulness
+  for (const key of ["path", "filePath", "file", "command", "query", "url", "pattern", "text"]) {
+    const val = obj[key];
+    if (typeof val === "string" && val.length > 0) {
+      return val.length > 80 ? val.slice(0, 77) + "..." : val;
+    }
+  }
+  return "";
+}
+
+/**
+ * Extract cost/token metadata from step-finish parts and return a
+ * compact line, or empty string if none found.
+ */
+function extractCostMeta(parts: any[]): string {
+  const stepFinish = parts.find(
+    (p: any) => p.type === "step-finish" && (p.cost != null || p.tokens),
+  );
+  if (!stepFinish) return "";
+  const meta: string[] = [];
+  if (stepFinish.cost != null) meta.push(`cost: $${Number(stepFinish.cost).toFixed(4)}`);
+  if (stepFinish.tokens) {
+    const t = stepFinish.tokens;
+    const tokParts: string[] = [];
+    if (t.input) tokParts.push(`${t.input} in`);
+    if (t.output) tokParts.push(`${t.output} out`);
+    if (t.reasoning) tokParts.push(`${t.reasoning} reasoning`);
+    if (tokParts.length > 0) meta.push(`tokens: ${tokParts.join(", ")}`);
+  }
+  return meta.length > 0 ? `_${meta.join(" | ")}_` : "";
 }
 
 /**
@@ -359,6 +430,30 @@ export function isProviderConfigured(p: Record<string, unknown>): boolean {
 }
 
 /**
+ * Resolve a session status value from the OpenCode API.
+ *
+ * The API may return status as a plain string ("idle", "running") or as an
+ * object like `{ state: "running", ... }`.  This helper normalises both forms
+ * into a human-readable string.
+ */
+export function resolveSessionStatus(raw: unknown): string {
+  if (raw === null || raw === undefined) return "idle";
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    // Try common property names the API might use
+    for (const key of ["state", "status", "type"]) {
+      if (typeof obj[key] === "string") return obj[key] as string;
+    }
+    // Last resort: check for a meaningful boolean flag
+    if (obj.running === true) return "running";
+    if (obj.done === true) return "completed";
+    if (obj.error === true) return "error";
+  }
+  return "unknown";
+}
+
+/**
  * Standard tool response builder.
  */
 export function toolResult(text: string, isError = false) {
@@ -370,7 +465,38 @@ export function toolResult(text: string, isError = false) {
 
 export function toolError(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
-  return toolResult(`Error: ${msg}`, true);
+  const suggestions = diagnoseError(msg);
+  const text = suggestions
+    ? `Error: ${msg}\n\n**Suggestions:**\n${suggestions}`
+    : `Error: ${msg}`;
+  return toolResult(text, true);
+}
+
+/**
+ * Analyze an error message and return contextual suggestions, or empty
+ * string if no specific advice applies.  Keeps suggestions concise to
+ * minimise token overhead.
+ */
+function diagnoseError(msg: string): string {
+  const lower = msg.toLowerCase();
+  const tips: string[] = [];
+
+  if (lower.includes("api key") || lower.includes("401") || lower.includes("403") || lower.includes("unauthorized") || lower.includes("forbidden")) {
+    tips.push("- Check credentials with `opencode_provider_test`");
+    tips.push("- Set a key with `opencode_auth_set`");
+  } else if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("aborted")) {
+    tips.push("- Use `opencode_message_send_async` + `opencode_wait` for long tasks");
+    tips.push("- Check session progress with `opencode_conversation`");
+  } else if (lower.includes("not found") && lower.includes("session")) {
+    tips.push("- List active sessions with `opencode_sessions_overview`");
+  } else if (lower.includes("rate limit") || lower.includes("429")) {
+    tips.push("- Wait a moment and retry, or switch provider");
+    tips.push("- Try a free model: `opencode_ask` with providerID `opencode`, modelID `minimax-m2.1-free`");
+  } else if (lower.includes("unreachable") || lower.includes("econnrefused") || lower.includes("fetch failed")) {
+    tips.push("- Is `opencode serve` running? Check with `opencode_setup`");
+  }
+
+  return tips.join("\n");
 }
 
 export function toolJson(value: unknown) {
