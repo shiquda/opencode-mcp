@@ -9,7 +9,7 @@
  * providers, and more.
  *
  * Features:
- *  - 75 tools covering the entire OpenCode API surface
+ *  - 78 tools covering the entire OpenCode API surface
  *  - High-level workflow tools (opencode_ask, opencode_reply, etc.)
  *  - Smart response formatting for LLM-friendly output
  *  - MCP Resources for browseable project data
@@ -59,18 +59,18 @@ const client = new OpenCodeClient({ baseUrl, username, password });
 const server = new McpServer(
   {
     name: "opencode-mcp",
-    version: "1.8.0",
+    version: "1.9.0",
     description:
       "MCP server wrapping the OpenCode AI coding agent. " +
       "Delegates complex coding tasks (build apps, refactor, debug) to an autonomous AI agent. " +
-      "Start with opencode_setup, then use opencode_ask for simple tasks or opencode_message_send_async + opencode_wait for complex ones.",
+      "Start with opencode_setup, then use opencode_ask for simple tasks, opencode_run for complex tasks, or opencode_fire for long-running background work.",
   },
   {
     instructions: [
       "# OpenCode MCP — Guide for LLM Clients",
       "",
       "You are connected to OpenCode, an autonomous AI coding agent that can build, edit, and debug software projects.",
-      "This server exposes ~75 tools organized into tiers. Use high-level tools first; drop to low-level only when needed.",
+      "This server exposes ~78 tools organized into tiers. Use high-level tools first; drop to low-level only when needed.",
       "",
       "## Getting Started (First Time)",
       "1. Call `opencode_setup` — checks server health, shows configured providers, and suggests next steps.",
@@ -86,8 +86,10 @@ const server = new McpServer(
       "- `opencode_context` — get project info (path, git branch, config, agents) (read-only)",
       "",
       "### Tier 2 — Async Tasks (for complex/long work)",
-      "- `opencode_message_send_async` — send a task without waiting (fire-and-forget). Returns immediately.",
-      "- `opencode_wait` — block until a session finishes processing. Use after `opencode_message_send_async`. Sends progress notifications.",
+      "- `opencode_run` — RECOMMENDED: send a task and wait for completion in one call. Creates session, sends prompt, polls until done. Best for tasks under 10 minutes.",
+      "- `opencode_fire` — fire-and-forget: send a task and return immediately. Use `opencode_check` to monitor progress. Best for long tasks (10+ min).",
+      "- `opencode_check` — cheap progress report: status, todos, file counts. Use to monitor sessions from `opencode_fire`. (read-only)",
+      "- `opencode_wait` — block until a session finishes processing. Use after `opencode_message_send_async`. Has timeout.",
       "- `opencode_session_todo` — see the agent's internal task list for a session (read-only)",
       "",
       "### Tier 3 — Monitoring & Review",
@@ -118,14 +120,14 @@ const server = new McpServer(
       "",
       "### Complex multi-step task (build an app, refactor code, etc.):",
       "```",
-      "// Step 1: Create a session",
-      'opencode_session_create({title: "Build login page"})',
-      "// Step 2: Send the task asynchronously",
-      'opencode_message_send_async({sessionId: "ses_xxx", text: "Build a React login form...", providerID: "anthropic", modelID: "claude-opus-4-6"})',
-      "// Step 3: Wait for completion (blocks with progress updates)",
-      'opencode_wait({sessionId: "ses_xxx", timeoutSeconds: 300})',
-      "// Step 4: Review what was built",
-      'opencode_review_changes({sessionId: "ses_xxx"})',
+      "// Option A: One-call (recommended for tasks under 10 min)",
+      'opencode_run({prompt: "Build a React login form with validation...", providerID: "anthropic", modelID: "claude-opus-4-6", maxDurationSeconds: 600})',
+      "",
+      "// Option B: Fire-and-forget (for longer tasks)",
+      'opencode_fire({prompt: "Build a full React app with auth, dashboard...", providerID: "anthropic", modelID: "claude-opus-4-6"})',
+      "// ... do other work ...",
+      'opencode_check({sessionId: "ses_xxx"})  // quick progress check',
+      'opencode_review_changes({sessionId: "ses_xxx"})  // see changes after completion',
       "```",
       "",
       "### Continue working on an existing session:",
@@ -139,7 +141,8 @@ const server = new McpServer(
       "- Tools marked with `readOnlyHint: true` in their annotations are safe and don't modify state.",
       "- Tools marked with `destructiveHint: true` (`opencode_instance_dispose`, `opencode_session_delete`) permanently delete data — confirm with the user before calling.",
       "- `opencode_wait` sends `notifications/message` progress updates while blocking. If it times out, it returns a progress report instead of failing.",
-      "- For very long tasks, use `opencode_message_send_async` + periodically call `opencode_session_todo` to check progress, rather than blocking with `opencode_wait`.",
+      "- For tasks under 10 minutes, prefer `opencode_run` (one call, handles everything). For longer tasks, use `opencode_fire` + `opencode_check`.",
+      "- For very long tasks, use `opencode_fire` + periodically call `opencode_check` or `opencode_session_todo` to monitor progress.",
     ].join("\n"),
   },
 );
@@ -187,7 +190,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `opencode-mcp v1.8.0 started (OpenCode server at ${baseUrl})`,
+    `opencode-mcp v1.9.0 started (OpenCode server at ${baseUrl})`,
   );
 }
 

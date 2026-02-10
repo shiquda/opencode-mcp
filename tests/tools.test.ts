@@ -55,7 +55,7 @@ describe("Tool registration", () => {
   });
 
   describe("registerWorkflowTools", () => {
-    it("registers all 10 workflow tools", () => {
+    it("registers all 13 workflow tools", () => {
       const { tools } = captureTools(registerWorkflowTools);
       const expected = [
         "opencode_setup",
@@ -65,6 +65,9 @@ describe("Tool registration", () => {
         "opencode_sessions_overview",
         "opencode_context",
         "opencode_wait",
+        "opencode_run",
+        "opencode_fire",
+        "opencode_check",
         "opencode_review_changes",
         "opencode_provider_test",
         "opencode_status",
@@ -72,7 +75,7 @@ describe("Tool registration", () => {
       for (const name of expected) {
         expect(tools.has(name), `Missing tool: ${name}`).toBe(true);
       }
-      expect(tools.size).toBe(10);
+      expect(tools.size).toBe(13);
     });
   });
 
@@ -1711,6 +1714,227 @@ describe("Tool handlers", () => {
       const handler = tools.get("opencode_wait")!;
       const result = await handler({ sessionId: "s1", timeoutSeconds: 5, pollIntervalMs: 50 });
       expect(result.content[0].text).toContain("no messages");
+    });
+  });
+
+  describe("opencode_run", () => {
+    it("creates session, sends prompt, and polls until idle", async () => {
+      let pollCount = 0;
+      const mockClient = createMockClient({
+        post: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve({ id: "ses-run-1" });
+          return Promise.resolve({ parts: [{ type: "text", text: "Done building!" }] });
+        }),
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") {
+            pollCount++;
+            // First poll: running, second poll: idle
+            return Promise.resolve({ "ses-run-1": pollCount >= 2 ? "idle" : "running" });
+          }
+          if (path.includes("/message")) return Promise.resolve([{ parts: [{ type: "text", text: "All tasks completed." }] }]);
+          if (path.includes("/todo")) return Promise.resolve([
+            { status: "completed", content: "Set up project" },
+            { status: "completed", content: "Write tests" },
+          ]);
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_run")!;
+      const result = await handler({ prompt: "Build app", providerID: "anthropic", modelID: "claude-opus-4-6" });
+      expect(result.content[0].text).toContain("ses-run-1");
+      expect(result.content[0].text).toContain("completed");
+      expect(result.content[0].text).toContain("2/2");
+    });
+
+    it("returns error status when session errors", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve({ id: "ses-err" });
+          return Promise.resolve({});
+        }),
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") return Promise.resolve({ "ses-err": "error" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_run")!;
+      const result = await handler({ prompt: "Bad task", maxDurationSeconds: 1 });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("error");
+    });
+
+    it("reuses existing session when sessionId provided", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValue({}),
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") return Promise.resolve({ "existing-ses": "idle" });
+          if (path.includes("/message")) return Promise.resolve([{ parts: [{ type: "text", text: "Done" }] }]);
+          if (path.includes("/todo")) return Promise.resolve([]);
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_run")!;
+      const result = await handler({ prompt: "Continue work", sessionId: "existing-ses" });
+      // Should NOT call POST /session to create a new one
+      const postMock = mockClient.post as ReturnType<typeof vi.fn>;
+      const sessionCreateCalls = postMock.mock.calls.filter((c: unknown[]) => c[0] === "/session");
+      expect(sessionCreateCalls.length).toBe(0);
+      expect(result.content[0].text).toContain("existing-ses");
+    });
+  });
+
+  describe("opencode_fire", () => {
+    it("creates session and returns immediately with monitoring instructions", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session") return Promise.resolve({ id: "ses-fire-1" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_fire")!;
+      const result = await handler({ prompt: "Build everything", providerID: "anthropic", modelID: "claude-opus-4-6" });
+      expect(result.content[0].text).toContain("ses-fire-1");
+      expect(result.content[0].text).toContain("dispatched");
+      expect(result.content[0].text).toContain("opencode_check");
+    });
+
+    it("reuses existing session when sessionId provided", async () => {
+      const mockClient = createMockClient({
+        post: vi.fn().mockResolvedValue({}),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_fire")!;
+      const result = await handler({ prompt: "More work", sessionId: "ses-existing" });
+      const postMock = mockClient.post as ReturnType<typeof vi.fn>;
+      const sessionCreateCalls = postMock.mock.calls.filter((c: unknown[]) => c[0] === "/session");
+      expect(sessionCreateCalls.length).toBe(0);
+      expect(result.content[0].text).toContain("ses-existing");
+    });
+  });
+
+  describe("opencode_check", () => {
+    it("returns compact progress report with status and todos", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") return Promise.resolve({ "ses-chk": { state: "running" } });
+          if (path.includes("/todo")) return Promise.resolve([
+            { status: "completed", content: "Setup" },
+            { status: "in_progress", content: "Build UI" },
+            { status: "pending", content: "Write tests" },
+          ]);
+          if (path.includes("/diff")) return Promise.resolve([{ path: "src/App.tsx" }, { path: "src/index.ts" }]);
+          if (path === "/session/ses-chk") return Promise.resolve({ title: "Build App", id: "ses-chk" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_check")!;
+      const result = await handler({ sessionId: "ses-chk" });
+      const text = result.content[0].text;
+      expect(text).toContain("Build App");
+      expect(text).toContain("running");
+      expect(text).toContain("1/3 completed");
+      expect(text).toContain("1 in progress");
+      expect(text).toContain("Build UI"); // current task
+      expect(text).toContain("Files changed: 2");
+    });
+
+    it("shows completion message when session is idle", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") return Promise.resolve({ "ses-done": "idle" });
+          if (path.includes("/todo")) return Promise.resolve([]);
+          if (path.includes("/diff")) return Promise.resolve([]);
+          if (path === "/session/ses-done") return Promise.resolve({ title: "Finished", id: "ses-done" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_check")!;
+      const result = await handler({ sessionId: "ses-done" });
+      const text = result.content[0].text;
+      expect(text).toContain("idle");
+      expect(text).toContain("Done!");
+      expect(text).toContain("opencode_review_changes");
+    });
+
+    it("includes last message when detailed=true", async () => {
+      const mockClient = createMockClient({
+        get: vi.fn().mockImplementation((path: string) => {
+          if (path === "/session/status") return Promise.resolve({ "ses-d": "idle" });
+          if (path.includes("/todo")) return Promise.resolve([]);
+          if (path.includes("/message")) return Promise.resolve([{ parts: [{ type: "text", text: "Build complete! All tests pass." }] }]);
+          if (path.includes("/diff")) return Promise.resolve([]);
+          if (path === "/session/ses-d") return Promise.resolve({ title: "Detail test", id: "ses-d" });
+          return Promise.resolve({});
+        }),
+      });
+      const tools = new Map<string, Function>();
+      const mockServer = {
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
+        }),
+      } as unknown as McpServer;
+      registerWorkflowTools(mockServer, mockClient);
+
+      const handler = tools.get("opencode_check")!;
+      const result = await handler({ sessionId: "ses-d", detailed: true });
+      const text = result.content[0].text;
+      expect(text).toContain("Build complete!");
+      expect(text).toContain("Last message");
     });
   });
 

@@ -639,6 +639,260 @@ export function registerWorkflowTools(
     },
   );
 
+  // ─── Run: create session + async send + poll until done ──────────
+  server.tool(
+    "opencode_run",
+    "Send a task to OpenCode and wait for completion. Combines session creation, async prompt, and polling into a single tool call. Use this instead of the manual opencode_message_send_async + opencode_wait pattern.",
+    {
+      prompt: z.string().describe("The task or instruction to send"),
+      sessionId: z
+        .string()
+        .optional()
+        .describe("Existing session ID to continue (omit to create a new session)"),
+      title: z.string().optional().describe("Session title (only for new sessions)"),
+      providerID: z.string().optional().describe("Provider ID (e.g. 'anthropic')"),
+      modelID: z.string().optional().describe("Model ID (e.g. 'claude-opus-4-6')"),
+      agent: z.string().optional().describe("Agent to use"),
+      maxDurationSeconds: z
+        .number()
+        .optional()
+        .describe("Max seconds to wait for completion (default: 600 = 10 minutes)"),
+      directory: directoryParam,
+    },
+    async ({ prompt, sessionId, title, providerID, modelID, agent, maxDurationSeconds, directory }) => {
+      try {
+        // 1. Create or reuse session
+        let sid = sessionId;
+        if (!sid) {
+          const session = (await client.post("/session", {
+            title: title ?? prompt.slice(0, 80),
+          }, { directory })) as Record<string, unknown>;
+          sid = session.id as string;
+        }
+
+        // 2. Send async (fire-and-forget)
+        const body: Record<string, unknown> = {
+          parts: [{ type: "text", text: prompt }],
+          noReply: false,
+        };
+        if (providerID && modelID) {
+          body.model = { providerID, modelID };
+        }
+        if (agent) body.agent = agent;
+
+        await client.post(`/session/${sid}/message`, body, { directory });
+
+        // 3. Poll until done
+        const timeout = (maxDurationSeconds ?? 600) * 1000;
+        const interval = 3000;
+        const start = Date.now();
+
+        while (Date.now() - start < timeout) {
+          await new Promise((r) => setTimeout(r, interval));
+
+          const statuses = (await client.get("/session/status", undefined, directory)) as Record<string, unknown>;
+          const status = resolveSessionStatus(statuses[sid!]);
+
+          if (status === "idle" || status === "completed") {
+            // Get final response
+            const messages = await client.get(
+              `/session/${sid}/message`,
+              { limit: "1" },
+              directory,
+            );
+            const arr = messages as unknown[];
+            const lastMsg = arr.length > 0 ? formatMessageResponse(arr[arr.length - 1]) : "";
+
+            // Get todo summary
+            let todoSummary = "";
+            try {
+              const todos = await client.get(`/session/${sid}/todo`, undefined, directory);
+              if (Array.isArray(todos) && todos.length > 0) {
+                const completed = todos.filter((t: any) => t.status === "completed").length;
+                todoSummary = `\nTasks: ${completed}/${todos.length} completed`;
+              }
+            } catch { /* non-critical */ }
+
+            return toolResult(
+              `Session: ${sid}\nStatus: completed${todoSummary}\n\n${lastMsg || "(no response text)"}`,
+            );
+          }
+
+          if (status === "error") {
+            return toolResult(
+              `Session: ${sid}\nStatus: error\n\nThe session ended with an error. Use \`opencode_conversation({sessionId: "${sid}"})\` to see what happened.`,
+              true,
+            );
+          }
+        }
+
+        // Timeout — return progress report
+        let todoProgress = "";
+        try {
+          const todos = await client.get(`/session/${sid}/todo`, undefined, directory);
+          if (Array.isArray(todos) && todos.length > 0) {
+            const completed = todos.filter((t: any) => t.status === "completed").length;
+            const inProgress = todos.filter((t: any) => t.status === "in_progress").length;
+            todoProgress = `\nTasks: ${completed}/${todos.length} completed, ${inProgress} in progress`;
+          }
+        } catch { /* non-critical */ }
+
+        return toolResult(
+          `Session: ${sid}\nStatus: still running after ${maxDurationSeconds ?? 600}s${todoProgress}\n\n` +
+          `The session is still working. Options:\n` +
+          `- \`opencode_check({sessionId: "${sid}"})\` — quick progress check\n` +
+          `- \`opencode_wait({sessionId: "${sid}", timeoutSeconds: 300})\` — wait longer\n` +
+          `- \`opencode_session_abort({id: "${sid}"})\` — stop the session`,
+          true,
+        );
+      } catch (e) {
+        return toolError(e);
+      }
+    },
+  );
+
+  // ─── Fire: send task and return immediately ────────────────────────
+  server.tool(
+    "opencode_fire",
+    "Fire-and-forget: send a task to OpenCode and return immediately. OpenCode works autonomously in the background. Use `opencode_check` to check progress anytime. Best for long-running tasks when you want to do other work in parallel.",
+    {
+      prompt: z.string().describe("The task or instruction to send"),
+      sessionId: z
+        .string()
+        .optional()
+        .describe("Existing session ID to continue (omit to create a new session)"),
+      title: z.string().optional().describe("Session title (only for new sessions)"),
+      providerID: z.string().optional().describe("Provider ID (e.g. 'anthropic')"),
+      modelID: z.string().optional().describe("Model ID (e.g. 'claude-opus-4-6')"),
+      agent: z.string().optional().describe("Agent to use"),
+      directory: directoryParam,
+    },
+    async ({ prompt, sessionId, title, providerID, modelID, agent, directory }) => {
+      try {
+        // 1. Create or reuse session
+        let sid = sessionId;
+        if (!sid) {
+          const session = (await client.post("/session", {
+            title: title ?? prompt.slice(0, 80),
+          }, { directory })) as Record<string, unknown>;
+          sid = session.id as string;
+        }
+
+        // 2. Send async
+        const body: Record<string, unknown> = {
+          parts: [{ type: "text", text: prompt }],
+          noReply: false,
+        };
+        if (providerID && modelID) {
+          body.model = { providerID, modelID };
+        }
+        if (agent) body.agent = agent;
+
+        await client.post(`/session/${sid}/message`, body, { directory });
+
+        return toolResult(
+          `Task dispatched to session: ${sid}\n\n` +
+          `OpenCode is now working autonomously. Use these tools to monitor:\n` +
+          `- \`opencode_check({sessionId: "${sid}"})\` — quick progress check\n` +
+          `- \`opencode_session_todo({id: "${sid}"})\` — see the agent's task list\n` +
+          `- \`opencode_wait({sessionId: "${sid}"})\` — block until done\n` +
+          `- \`opencode_review_changes({sessionId: "${sid}"})\` — see file changes after completion`,
+        );
+      } catch (e) {
+        return toolError(e);
+      }
+    },
+  );
+
+  // ─── Check: cheap progress report for a session ────────────────────
+  server.tool(
+    "opencode_check",
+    "Get a compact cached progress report for a session. Much cheaper than opencode_conversation or opencode_wait — returns status, todos, and file counts in a single call. Use this to monitor sessions launched with opencode_fire.",
+    {
+      sessionId: z.string().describe("Session ID to check"),
+      detailed: z
+        .boolean()
+        .optional()
+        .describe("If true, include the last message text (default: false)"),
+      directory: directoryParam,
+    },
+    readOnly,
+    async ({ sessionId, detailed, directory }) => {
+      try {
+        // Parallel fetch: status, todos, session info, optionally last message
+        const promises: Promise<unknown>[] = [
+          client.get("/session/status", undefined, directory),
+          client.get(`/session/${sessionId}/todo`, undefined, directory).catch(() => null),
+          client.get(`/session/${sessionId}`, undefined, directory).catch(() => null),
+        ];
+        if (detailed) {
+          promises.push(
+            client.get(`/session/${sessionId}/message`, { limit: "1" }, directory).catch(() => null),
+          );
+        }
+
+        const [statuses, todos, sessionInfo, lastMessages] = await Promise.all(promises) as [
+          Record<string, unknown>,
+          Array<Record<string, unknown>> | null,
+          Record<string, unknown> | null,
+          unknown[] | null,
+        ];
+
+        const status = resolveSessionStatus(statuses[sessionId]);
+        const lines: string[] = [];
+
+        // Session title
+        const title = sessionInfo?.title ?? "(untitled)";
+        lines.push(`## ${title} [${sessionId}]`);
+        lines.push(`Status: **${status}**`);
+
+        // Todos
+        if (Array.isArray(todos) && todos.length > 0) {
+          const completed = todos.filter((t) => t.status === "completed").length;
+          const inProgress = todos.filter((t) => t.status === "in_progress").length;
+          const pending = todos.length - completed - inProgress;
+          lines.push(`Tasks: ${completed}/${todos.length} completed` +
+            (inProgress > 0 ? `, ${inProgress} in progress` : "") +
+            (pending > 0 ? `, ${pending} pending` : ""));
+
+          // Show current task
+          const current = todos.find((t) => t.status === "in_progress");
+          if (current) {
+            lines.push(`Current: ${current.content ?? current.title ?? "(unknown)"}`);
+          }
+        }
+
+        // File changes count (from diff endpoint)
+        try {
+          const diffs = await client.get(`/session/${sessionId}/diff`, undefined, directory) as unknown[];
+          if (Array.isArray(diffs) && diffs.length > 0) {
+            lines.push(`Files changed: ${diffs.length}`);
+          }
+        } catch { /* non-critical */ }
+
+        // Last message (if detailed)
+        if (detailed && Array.isArray(lastMessages) && lastMessages.length > 0) {
+          const lastMsg = formatMessageResponse(lastMessages[lastMessages.length - 1]);
+          if (lastMsg) {
+            const truncated = lastMsg.length > 500 ? lastMsg.slice(0, 497) + "..." : lastMsg;
+            lines.push(`\n### Last message\n${truncated}`);
+          }
+        }
+
+        // Suggest next action based on status
+        if (status === "idle" || status === "completed") {
+          lines.push(`\nDone! Use \`opencode_review_changes({sessionId: "${sessionId}"})\` to see all changes.`);
+        } else if (status === "error") {
+          lines.push(`\nFailed. Use \`opencode_conversation({sessionId: "${sessionId}"})\` to see what went wrong.`);
+        }
+
+        return toolResult(lines.join("\n"));
+      } catch (e) {
+        return toolError(e);
+      }
+    },
+  );
+
   // ─── Quick status dashboard ───────────────────────────────────────
   server.tool(
     "opencode_status",

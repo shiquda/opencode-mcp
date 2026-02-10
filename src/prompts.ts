@@ -173,9 +173,9 @@ Bad: \`opencode_ask({prompt: "..."})\`
 |------|------|-----|
 | Quick question | \`opencode_ask\` | One call, creates session + gets response |
 | Multi-turn conversation | \`opencode_ask\` then \`opencode_reply\` | Builds on existing session |
-| Complex build task (< 5 min) | \`opencode_ask\` with detailed prompt | Simple, blocks until done |
-| Complex build task (5-10 min) | \`opencode_message_send_async\` + \`opencode_wait\` | Better timeout control |
-| Very long task (10+ min) | \`opencode_message_send_async\` + periodic \`opencode_session_todo\` | Non-blocking progress checks |
+| Complex build task (< 10 min) | \`opencode_run\` | One call, creates session + polls until done |
+| Very long task (10+ min) | \`opencode_fire\` + \`opencode_check\` | Fire-and-forget with cheap progress checks |
+| Monitor a running session | \`opencode_check\` | Status, todos, file counts in one call |
 
 ## 4. Writing Good Prompts for OpenCode
 The agent works best with structured, specific prompts:
@@ -186,7 +186,8 @@ The agent works best with structured, specific prompts:
 - Say "Run npm run build and fix any errors" at the end
 
 ## 5. Monitoring Long-Running Tasks
-- \`opencode_session_todo\` — see the agent's internal checklist (cheapest check)
+- \`opencode_check\` — quick progress report: status, todos, file counts (cheapest)
+- \`opencode_session_todo\` — see the agent's internal checklist
 - \`opencode_wait\` — block until done, but has a timeout
 - \`opencode_conversation\` — see full message history (expensive, lots of tokens)
 - \`opencode_review_changes\` — see all file diffs (use after task completes)
