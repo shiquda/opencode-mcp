@@ -56,19 +56,93 @@ const autoServe = process.env.OPENCODE_AUTO_SERVE !== "false";
 
 const client = new OpenCodeClient({ baseUrl, username, password });
 
-const server = new McpServer({
-  name: "opencode-mcp",
-  version: "1.5.0",
-  description:
-    "Full-featured MCP server wrapping the OpenCode AI headless HTTP server. " +
-    "Provides 75 tools, resources, and prompts to manage sessions, send " +
-    "prompts, search files, configure providers, control the TUI, monitor " +
-    "events, and interact with the full OpenCode API. " +
-    "All tools support a directory parameter for multi-project workflows. " +
-    "Auto-detects and starts the OpenCode server if not already running. " +
-    "Start with opencode_setup for onboarding, opencode_ask for one-shot " +
-    "questions, or opencode_context to understand the current project.",
-});
+const server = new McpServer(
+  {
+    name: "opencode-mcp",
+    version: "1.8.0",
+    description:
+      "MCP server wrapping the OpenCode AI coding agent. " +
+      "Delegates complex coding tasks (build apps, refactor, debug) to an autonomous AI agent. " +
+      "Start with opencode_setup, then use opencode_ask for simple tasks or opencode_message_send_async + opencode_wait for complex ones.",
+  },
+  {
+    instructions: [
+      "# OpenCode MCP — Guide for LLM Clients",
+      "",
+      "You are connected to OpenCode, an autonomous AI coding agent that can build, edit, and debug software projects.",
+      "This server exposes ~75 tools organized into tiers. Use high-level tools first; drop to low-level only when needed.",
+      "",
+      "## Getting Started (First Time)",
+      "1. Call `opencode_setup` — checks server health, shows configured providers, and suggests next steps.",
+      "2. Call `opencode_provider_models({providerId: 'anthropic'})` — lists available models for a provider.",
+      "3. Pick a provider and model. IMPORTANT: Always pass `providerID` and `modelID` when sending prompts, or you may get empty responses.",
+      "",
+      "## Tool Tiers (prefer higher tiers)",
+      "",
+      "### Tier 1 — Essential (use these first)",
+      "- `opencode_setup` — first-time onboarding, health check (read-only)",
+      "- `opencode_ask` — one-shot question/task, creates session + gets response in one call. Simplest way to use OpenCode.",
+      "- `opencode_reply` — continue a conversation in an existing session",
+      "- `opencode_context` — get project info (path, git branch, config, agents) (read-only)",
+      "",
+      "### Tier 2 — Async Tasks (for complex/long work)",
+      "- `opencode_message_send_async` — send a task without waiting (fire-and-forget). Returns immediately.",
+      "- `opencode_wait` — block until a session finishes processing. Use after `opencode_message_send_async`. Sends progress notifications.",
+      "- `opencode_session_todo` — see the agent's internal task list for a session (read-only)",
+      "",
+      "### Tier 3 — Monitoring & Review",
+      "- `opencode_review_changes` — see all file diffs from a session (read-only)",
+      "- `opencode_conversation` — get full message history (read-only)",
+      "- `opencode_sessions_overview` — list all sessions with status (read-only)",
+      "- `opencode_provider_models` — list models for a specific provider (read-only)",
+      "- `opencode_status` — quick server health dashboard (read-only)",
+      "",
+      "### Tier 4 — Fine-Grained Control",
+      "- `opencode_session_*` — create, delete, fork, abort, share sessions",
+      "- `opencode_message_*` — send messages, list history, execute commands",
+      "- `opencode_file_*` / `opencode_find_*` — search files, read content, check VCS status",
+      "- `opencode_provider_*` — manage providers, auth, OAuth flows",
+      "",
+      "### Tier 5 — Specialist (rarely needed)",
+      "- `opencode_tui_*` — control the terminal UI (only if a TUI is running)",
+      "- `opencode_events_poll` — poll raw SSE events",
+      "- `opencode_mcp_*` — manage MCP servers inside OpenCode",
+      "- `opencode_instance_dispose` — shut down the server (DESTRUCTIVE!)",
+      "",
+      "## Recommended Workflows",
+      "",
+      "### Quick question or small task:",
+      "```",
+      'opencode_ask({prompt: "How does auth work in this project?", providerID: "anthropic", modelID: "claude-sonnet-4-5"})',
+      "```",
+      "",
+      "### Complex multi-step task (build an app, refactor code, etc.):",
+      "```",
+      "// Step 1: Create a session",
+      'opencode_session_create({title: "Build login page"})',
+      "// Step 2: Send the task asynchronously",
+      'opencode_message_send_async({sessionId: "ses_xxx", text: "Build a React login form...", providerID: "anthropic", modelID: "claude-opus-4-6"})',
+      "// Step 3: Wait for completion (blocks with progress updates)",
+      'opencode_wait({sessionId: "ses_xxx", timeoutSeconds: 300})',
+      "// Step 4: Review what was built",
+      'opencode_review_changes({sessionId: "ses_xxx"})',
+      "```",
+      "",
+      "### Continue working on an existing session:",
+      "```",
+      'opencode_reply({sessionId: "ses_xxx", prompt: "Now add form validation", providerID: "anthropic", modelID: "claude-sonnet-4-5"})',
+      "```",
+      "",
+      "## Important Notes",
+      "- ALWAYS specify `providerID` and `modelID` when using `opencode_ask`, `opencode_reply`, `opencode_message_send`, or `opencode_message_send_async`. Without these, the agent may return empty responses.",
+      "- The `directory` parameter on every tool targets a specific project. Omit it to use the server's default project.",
+      "- Tools marked with `readOnlyHint: true` in their annotations are safe and don't modify state.",
+      "- Tools marked with `destructiveHint: true` (`opencode_instance_dispose`, `opencode_session_delete`) permanently delete data — confirm with the user before calling.",
+      "- `opencode_wait` sends `notifications/message` progress updates while blocking. If it times out, it returns a progress report instead of failing.",
+      "- For very long tasks, use `opencode_message_send_async` + periodically call `opencode_session_todo` to check progress, rather than blocking with `opencode_wait`.",
+    ].join("\n"),
+  },
+);
 
 // ── Low-level API tools ─────────────────────────────────────────────
 registerGlobalTools(server, client);
@@ -113,7 +187,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `opencode-mcp v1.5.0 started (OpenCode server at ${baseUrl})`,
+    `opencode-mcp v1.8.0 started (OpenCode server at ${baseUrl})`,
   );
 }
 

@@ -17,6 +17,7 @@ import {
   toolResult,
   toolError,
   directoryParam,
+  readOnly,
 } from "../helpers.js";
 
 export function registerWorkflowTools(
@@ -30,6 +31,7 @@ export function registerWorkflowTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const sections: string[] = [];
@@ -342,6 +344,7 @@ export function registerWorkflowTools(
         .describe("Max messages to return (default: all)"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ sessionId, limit, directory }) => {
       try {
         const query: Record<string, string> = {};
@@ -368,6 +371,7 @@ export function registerWorkflowTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const [sessions, statuses] = await Promise.all([
@@ -404,6 +408,7 @@ export function registerWorkflowTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const [project, path, vcs, config, agents] = await Promise.all([
@@ -480,13 +485,13 @@ export function registerWorkflowTools(
   // ─── Wait for async session to complete ───────────────────────────
   server.tool(
     "opencode_wait",
-    "Poll a session until it finishes processing. Use this after opencode_message_send_async to wait for the AI to complete its response.",
+    "Poll a session until it finishes processing. Use after opencode_message_send_async to wait for the AI to complete its response. Sends progress notifications while waiting. If timeout is reached, returns a progress report (not an error). For long tasks, consider using opencode_session_todo to check progress instead of blocking.",
     {
       sessionId: z.string().describe("Session ID to wait on"),
       timeoutSeconds: z
         .number()
         .optional()
-        .describe("Max seconds to wait (default: 120)"),
+        .describe("Max seconds to wait (default: 120). Set higher (300-600) for complex tasks."),
       pollIntervalMs: z
         .number()
         .optional()
@@ -552,6 +557,7 @@ export function registerWorkflowTools(
         .describe("Specific message ID to get diff for"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ sessionId, messageID, directory }) => {
       try {
         const query: Record<string, string> = {};
@@ -640,6 +646,7 @@ export function registerWorkflowTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const [health, providerRaw, sessions, vcs] = await Promise.all([

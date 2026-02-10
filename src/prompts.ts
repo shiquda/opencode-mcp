@@ -143,6 +143,77 @@ Steps:
     }),
   );
 
+  // ─── Best Practices ─────────────────────────────────────────────────
+  server.prompt(
+    "opencode-best-practices",
+    "Get best practices for using OpenCode MCP tools effectively. Covers tool selection, async workflows, provider configuration, and common pitfalls.",
+    {},
+    async () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: `# OpenCode MCP Best Practices
+
+## 1. First-Time Setup
+- Always start with \`opencode_setup\` to check server health and see available providers.
+- Use \`opencode_provider_models({providerId: "anthropic"})\` to see which models are available.
+- Test a provider with \`opencode_provider_test({providerId: "anthropic"})\` if you're unsure it's working.
+
+## 2. Always Specify Provider and Model
+CRITICAL: When calling \`opencode_ask\`, \`opencode_reply\`, \`opencode_message_send\`, or \`opencode_message_send_async\`, ALWAYS pass \`providerID\` and \`modelID\`. Without these, the agent may select a default model that returns empty responses.
+
+Good: \`opencode_ask({prompt: "...", providerID: "anthropic", modelID: "claude-sonnet-4-5"})\`
+Bad: \`opencode_ask({prompt: "..."})\`
+
+## 3. Choosing the Right Tool
+
+| Task | Tool | Why |
+|------|------|-----|
+| Quick question | \`opencode_ask\` | One call, creates session + gets response |
+| Multi-turn conversation | \`opencode_ask\` then \`opencode_reply\` | Builds on existing session |
+| Complex build task (< 5 min) | \`opencode_ask\` with detailed prompt | Simple, blocks until done |
+| Complex build task (5-10 min) | \`opencode_message_send_async\` + \`opencode_wait\` | Better timeout control |
+| Very long task (10+ min) | \`opencode_message_send_async\` + periodic \`opencode_session_todo\` | Non-blocking progress checks |
+
+## 4. Writing Good Prompts for OpenCode
+The agent works best with structured, specific prompts:
+- Specify the tech stack explicitly
+- List all features/requirements as bullet points
+- Define the project structure you want
+- State what tests you expect
+- Say "Run npm run build and fix any errors" at the end
+
+## 5. Monitoring Long-Running Tasks
+- \`opencode_session_todo\` — see the agent's internal checklist (cheapest check)
+- \`opencode_wait\` — block until done, but has a timeout
+- \`opencode_conversation\` — see full message history (expensive, lots of tokens)
+- \`opencode_review_changes\` — see all file diffs (use after task completes)
+
+## 6. Error Recovery
+- If a session fails, use \`opencode_reply\` to give the agent the error and ask it to fix
+- If the server is unreachable, call \`opencode_setup\` to diagnose
+- If auth fails, use \`opencode_auth_set\` to update API keys
+- If a session is stuck, use \`opencode_session_abort\` then retry
+
+## 7. Tool Annotations
+Tools are annotated with behavior hints:
+- \`readOnlyHint: true\` — safe, doesn't change anything (setup, status, find, review)
+- \`destructiveHint: true\` — permanently deletes data (session_delete, instance_dispose)
+- No annotation — has side effects but is not destructive (ask, reply, send messages)
+
+## 8. Common Pitfalls
+- Don't call \`opencode_conversation\` on active sessions — it's expensive and the response is still being generated
+- Don't create new sessions for each message — use \`opencode_reply\` to continue existing ones
+- Don't forget the \`directory\` parameter when working with multiple projects
+- Don't call \`opencode_instance_dispose\` unless you really want to shut down the server`,
+          },
+        },
+      ],
+    }),
+  );
+
   // ─── Session Summary ──────────────────────────────────────────────
   server.prompt(
     "opencode-session-summary",

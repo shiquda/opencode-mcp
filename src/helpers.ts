@@ -10,6 +10,15 @@ import { z } from "zod";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// ── Tool Annotations ─────────────────────────────────────────────────
+// MCP spec tool annotations help clients understand tool behavior.
+
+/** Read-only tool: does not modify state. */
+export const readOnly = { readOnlyHint: true, destructiveHint: false } as const;
+
+/** Destructive tool: permanently deletes data or shuts down services. */
+export const destructive = { readOnlyHint: false, destructiveHint: true } as const;
+
 /**
  * Shared Zod parameter for project directory targeting.
  * When provided, sent as the x-opencode-directory header so the

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolError, formatSessionList, formatDiffResponse, resolveSessionStatus, toolResult, directoryParam } from "../helpers.js";
+import { toolError, formatSessionList, formatDiffResponse, resolveSessionStatus, toolResult, directoryParam, destructive, readOnly } from "../helpers.js";
 
 /** Format a single session object into a compact human-readable summary. */
 function formatSession(raw: unknown): string {
@@ -47,6 +47,7 @@ export function registerSessionTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const sessions = (await client.get("/session", undefined, directory)) as Array<Record<string, unknown>>;
@@ -85,6 +86,7 @@ export function registerSessionTools(
       id: z.string().describe("Session ID"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ id, directory }) => {
       try {
         const session = await client.get(`/session/${id}`, undefined, directory);
@@ -102,6 +104,7 @@ export function registerSessionTools(
       id: z.string().describe("Session ID to delete"),
       directory: directoryParam,
     },
+    destructive,
     async ({ id, directory }) => {
       try {
         await client.delete(`/session/${id}`, undefined, directory);
@@ -139,6 +142,7 @@ export function registerSessionTools(
       id: z.string().describe("Parent session ID"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ id, directory }) => {
       try {
         const children = (await client.get(`/session/${id}/children`, undefined, directory)) as unknown[];
@@ -158,6 +162,7 @@ export function registerSessionTools(
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const raw = await client.get("/session/status", undefined, directory);
@@ -183,6 +188,7 @@ export function registerSessionTools(
       id: z.string().describe("Session ID"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ id, directory }) => {
       try {
         const raw = await client.get(`/session/${id}/todo`, undefined, directory);
@@ -407,6 +413,7 @@ export function registerSessionTools(
       query: z.string().describe("Search keyword (case-insensitive match on session title)"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ query, directory }) => {
       try {
         const sessions = (await client.get("/session", undefined, directory)) as Array<Record<string, unknown>>;

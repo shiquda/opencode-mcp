@@ -19,9 +19,9 @@ function capturePrompts() {
 }
 
 describe("Prompt registration", () => {
-  it("registers all 5 prompts", () => {
+  it("registers all 6 prompts", () => {
     const { prompts } = capturePrompts();
-    expect(prompts.size).toBe(5);
+    expect(prompts.size).toBe(6);
   });
 
   it("registers expected prompt names", () => {
@@ -31,6 +31,7 @@ describe("Prompt registration", () => {
       "opencode-debug",
       "opencode-project-setup",
       "opencode-implement",
+      "opencode-best-practices",
       "opencode-session-summary",
     ];
     for (const name of expected) {
@@ -85,6 +86,19 @@ describe("Prompt handlers", () => {
     });
     expect(result.messages[0].content.text).toContain("Add dark mode");
     expect(result.messages[0].content.text).toContain("Must support system preference");
+  });
+
+  it("best-practices prompt returns comprehensive guide", async () => {
+    const { prompts } = capturePrompts();
+    const handler = prompts.get("opencode-best-practices")!.handler;
+    const result = await handler({});
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe("user");
+    const text = result.messages[0].content.text;
+    expect(text).toContain("Best Practices");
+    expect(text).toContain("opencode_setup");
+    expect(text).toContain("providerID");
+    expect(text).toContain("Common Pitfalls");
   });
 
   it("session-summary prompt includes sessionId", async () => {

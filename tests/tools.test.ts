@@ -30,7 +30,12 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
 function captureTools(registerFn: (server: McpServer, client: OpenCodeClient) => void) {
   const tools = new Map<string, { description: string; handler: Function }>();
   const mockServer = {
-    tool: vi.fn((name: string, description: string, _schema: unknown, handler: Function) => {
+    tool: vi.fn((...args: unknown[]) => {
+      // Handle both 4-arg (name, desc, schema, handler) and
+      // 5-arg (name, desc, schema, annotations, handler) forms
+      const name = args[0] as string;
+      const description = args[1] as string;
+      const handler = args[args.length - 1] as Function;
       tools.set(name, { description, handler });
     }),
   } as unknown as McpServer;
@@ -134,8 +139,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, handler: Function) => {
-          tools.set(_n, handler);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerGlobalTools(mockServer, mockClient);
@@ -152,8 +157,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, handler: Function) => {
-          tools.set(_n, handler);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerGlobalTools(mockServer, mockClient);
@@ -180,8 +185,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -229,8 +234,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, failClient);
@@ -248,8 +253,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, emptyClient);
@@ -267,8 +272,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, noTextClient);
@@ -292,8 +297,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, emptyClient);
@@ -312,8 +317,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, goodClient);
@@ -338,8 +343,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -361,8 +366,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -396,8 +401,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -434,8 +439,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -465,8 +470,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -495,8 +500,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -523,8 +528,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -543,8 +548,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -571,8 +576,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -599,8 +604,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -630,8 +635,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -654,8 +659,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -675,8 +680,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -697,8 +702,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -717,8 +722,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -739,8 +744,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -759,8 +764,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -783,8 +788,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -800,8 +805,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -820,8 +825,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -841,8 +846,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -861,8 +866,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -883,8 +888,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerFileTools(mockServer, mockClient);
@@ -907,8 +912,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -926,8 +931,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -954,8 +959,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -984,8 +989,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerProviderTools(mockServer, mockClient);
@@ -1013,8 +1018,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerConfigTools(mockServer, mockClient);
@@ -1037,8 +1042,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerGlobalTools(mockServer, mockClient);
@@ -1055,8 +1060,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ post: postMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1073,8 +1078,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerGlobalTools(mockServer, mockClient);
@@ -1092,8 +1097,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerMessageTools(mockServer, mockClient);
@@ -1110,8 +1115,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerMessageTools(mockServer, mockClient);
@@ -1131,8 +1136,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerMessageTools(mockServer, mockClient);
@@ -1149,8 +1154,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerMessageTools(mockServer, mockClient);
@@ -1173,8 +1178,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1198,8 +1203,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1215,8 +1220,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1234,8 +1239,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1280,8 +1285,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ post: postMock, delete: deleteMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1304,8 +1309,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ post: postMock, delete: deleteMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1328,8 +1333,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ post: postMock, delete: deleteMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1357,8 +1362,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1379,8 +1384,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1398,8 +1403,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1417,8 +1422,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1436,8 +1441,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1465,8 +1470,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1493,8 +1498,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1516,8 +1521,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1537,8 +1542,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1560,8 +1565,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1582,8 +1587,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerSessionTools(mockServer, mockClient);
@@ -1611,8 +1616,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1632,8 +1637,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1651,8 +1656,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1677,8 +1682,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1697,8 +1702,8 @@ describe("Tool handlers", () => {
       const mockClient = createMockClient({ get: getMock });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1725,8 +1730,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1751,8 +1756,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1771,8 +1776,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);
@@ -1793,8 +1798,8 @@ describe("Tool handlers", () => {
       });
       const tools = new Map<string, Function>();
       const mockServer = {
-        tool: vi.fn((_n: string, _d: string, _s: unknown, h: Function) => {
-          tools.set(_n, h);
+        tool: vi.fn((...args: unknown[]) => {
+          tools.set(args[0] as string, args[args.length - 1] as Function);
         }),
       } as unknown as McpServer;
       registerWorkflowTools(mockServer, mockClient);

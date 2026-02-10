@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolJson, toolError, toolResult, directoryParam } from "../helpers.js";
+import { toolJson, toolError, toolResult, directoryParam, destructive, readOnly } from "../helpers.js";
 
 export function registerMiscTools(server: McpServer, client: OpenCodeClient) {
   // --- Path & VCS ---
@@ -79,10 +79,11 @@ export function registerMiscTools(server: McpServer, client: OpenCodeClient) {
 
   server.tool(
     "opencode_instance_dispose",
-    "Dispose the current opencode instance (shuts it down)",
+    "Dispose the current opencode instance (shuts it down). WARNING: This is destructive and will terminate the server.",
     {
       directory: directoryParam,
     },
+    destructive,
     async ({ directory }) => {
       try {
         await client.post("/instance/dispose", undefined, { directory });

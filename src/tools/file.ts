@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolJson, toolError, toolResult, directoryParam } from "../helpers.js";
+import { toolJson, toolError, toolResult, directoryParam, readOnly } from "../helpers.js";
 
 export function registerFileTools(server: McpServer, client: OpenCodeClient) {
   server.tool(
@@ -13,6 +13,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
         .describe("Text or regex pattern to search for in files"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ pattern, directory }) => {
       try {
         const raw = await client.get("/find", { pattern }, directory);
@@ -61,6 +62,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
         .describe("Max number of results (1-200)"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ query, type, searchDirectory, limit, directory }) => {
       try {
         const q: Record<string, string> = { query };
@@ -85,6 +87,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
       query: z.string().describe("Symbol name to search for"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ query, directory }) => {
       try {
         const raw = await client.get("/find/symbol", { query }, directory);
@@ -117,6 +120,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
         .describe("Path to list (defaults to project root)"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ path, directory }) => {
       try {
         const q: Record<string, string> = { path: path || "." };
@@ -142,6 +146,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
       path: z.string().describe("File path to read"),
       directory: directoryParam,
     },
+    readOnly,
     async ({ path, directory }) => {
       try {
         const result = (await client.get("/file/content", { path }, directory)) as Record<string, unknown>;
@@ -161,6 +166,7 @@ export function registerFileTools(server: McpServer, client: OpenCodeClient) {
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const files = (await client.get("/file/status", undefined, directory)) as Array<Record<string, unknown>>;

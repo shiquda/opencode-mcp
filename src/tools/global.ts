@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { OpenCodeClient } from "../client.js";
-import { toolResult, toolError, directoryParam } from "../helpers.js";
+import { toolResult, toolError, directoryParam, readOnly } from "../helpers.js";
 
 export function registerGlobalTools(server: McpServer, client: OpenCodeClient) {
   server.tool(
@@ -9,6 +9,7 @@ export function registerGlobalTools(server: McpServer, client: OpenCodeClient) {
     {
       directory: directoryParam,
     },
+    readOnly,
     async ({ directory }) => {
       try {
         const raw = await client.get("/global/health", undefined, directory) as Record<string, unknown>;
