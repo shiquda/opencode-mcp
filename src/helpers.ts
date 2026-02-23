@@ -91,6 +91,12 @@ export function applyModelDefaults(
 export function normalizeDirectory(directory?: string): string | undefined {
   if (!directory) return undefined;
 
+  // Skip validation for remote paths (Windows paths or when explicitly requested)
+  if (process.env.OPENCODE_SKIP_DIRECTORY_VALIDATION === "true" || 
+      /^[a-zA-Z]:[\\\/]/.test(directory)) {
+    return directory;
+  }
+
   // Resolve to absolute (handles "..", ".", trailing slashes)
   const normalized = resolve(directory);
 
@@ -98,15 +104,15 @@ export function normalizeDirectory(directory?: string): string | undefined {
   if (!normalized.startsWith("/")) {
     throw new Error(
       `Invalid directory: "${directory}" is not an absolute path. ` +
-        `Provide a full path like "/home/user/my-project".`,
+        `Provide a full path like "/home/user/my-project" or set OPENCODE_SKIP_DIRECTORY_VALIDATION=true to skip validation.`,
     );
   }
 
-  // Must exist on disk
+  // Must exist on disk (skip if validation disabled)
   if (!existsSync(normalized)) {
     throw new Error(
       `Directory not found: "${normalized}" does not exist. ` +
-        `Check the path and try again.`,
+        `Check the path and try again, or set OPENCODE_SKIP_DIRECTORY_VALIDATION=true to skip validation.`,
     );
   }
 
