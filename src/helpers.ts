@@ -120,6 +120,23 @@ export function normalizeDirectory(directory?: string): string | undefined {
 }
 
 /**
+ * Get the directory from a session by ID.
+ * Used when directory is not explicitly provided to maintain session context.
+ */
+export async function getSessionDirectory(
+  client: import("./client.js").OpenCodeClient,
+  sessionId: string,
+): Promise<string | undefined> {
+  try {
+    const session = (await client.get(`/session/${sessionId}`)) as Record<string, unknown>;
+    const dir = session.directory || session.Directory;
+    return typeof dir === "string" ? dir : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Extract a human-readable summary from a message response.
  * Pulls text content from parts, summarizes tool calls, etc.
  * Accepts any shape — casts internally for safety.

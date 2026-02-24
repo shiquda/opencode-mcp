@@ -16,6 +16,7 @@ import {
   resolveSessionStatus,
   applyModelDefaults,
   normalizeDirectory,
+  getSessionDirectory,
   toolResult,
   toolError,
   directoryParam,
@@ -303,6 +304,12 @@ export function registerWorkflowTools(
     },
     async ({ sessionId, prompt, providerID, modelID, agent, directory }) => {
       try {
+        // Auto-fetch directory from session if not provided
+        let effectiveDirectory = directory;
+        if (!effectiveDirectory && sessionId) {
+          effectiveDirectory = await getSessionDirectory(client, sessionId);
+        }
+
         const body: Record<string, unknown> = {
           parts: [{ type: "text", text: prompt }],
         };
@@ -313,7 +320,7 @@ export function registerWorkflowTools(
         const response = await client.post(
           `/session/${sessionId}/message`,
           body,
-          { directory },
+          { directory: effectiveDirectory },
         );
 
         const analysis = analyzeMessageResponse(response);
@@ -324,8 +331,8 @@ export function registerWorkflowTools(
           parts.push(`\n--- WARNING ---\n${analysis.warning}`);
         }
         // Session-directory consistency note
-        if (sessionId && directory) {
-          parts.push(`\n_Note: Using session ${sessionId} in directory ${directory}. Ensure this session belongs to this project._`);
+        if (sessionId && effectiveDirectory) {
+          parts.push(`\n_Note: Using session ${sessionId} in directory ${effectiveDirectory}. Ensure this session belongs to this project._`);
         }
         return toolResult(
           parts.join("\n\n") || "Empty response.",
@@ -509,12 +516,18 @@ export function registerWorkflowTools(
     },
     async ({ sessionId, timeoutSeconds, pollIntervalMs, directory }) => {
       try {
+        // Auto-fetch directory from session if not provided
+        let effectiveDirectory = directory;
+        if (!effectiveDirectory && sessionId) {
+          effectiveDirectory = await getSessionDirectory(client, sessionId);
+        }
+
         const timeout = (timeoutSeconds ?? 120) * 1000;
         const interval = pollIntervalMs ?? 2000;
         const start = Date.now();
 
         while (Date.now() - start < timeout) {
-          const statuses = (await client.get("/session/status", undefined, directory)) as Record<
+          const statuses = (await client.get("/session/status", undefined, effectiveDirectory)) as Record<
             string,
             unknown
           >;
@@ -525,7 +538,7 @@ export function registerWorkflowTools(
             const messages = await client.get(
               `/session/${sessionId}/message`,
               { limit: "1" },
-              directory,
+              effectiveDirectory,
             );
             const arr = messages as unknown[];
             if (arr.length > 0) {
@@ -672,11 +685,18 @@ export function registerWorkflowTools(
       try {
         // 1. Create or reuse session
         let sid = sessionId;
+        let effectiveDirectory = directory;
+
         if (!sid) {
+          // Create new session with provided directory
           const session = (await client.post("/session", {
             title: title ?? prompt.slice(0, 80),
           }, { directory })) as Record<string, unknown>;
           sid = session.id as string;
+          effectiveDirectory = (session.directory as string) || directory;
+        } else if (!effectiveDirectory) {
+          // Reusing existing session, auto-fetch directory if not provided
+          effectiveDirectory = await getSessionDirectory(client, sid);
         }
 
         // 2. Send async (fire-and-forget)
@@ -688,23 +708,23 @@ export function registerWorkflowTools(
         if (model) body.model = model;
         if (agent) body.agent = agent;
 
-        await client.post(`/session/${sid}/message`, body, { directory });
+        await client.post(`/session/${sid}/message`, body, { directory: effectiveDirectory });
 
         // Session-directory consistency note
-        const dirNote = sessionId && directory
-          ? `\n_Note: Using session ${sid} in directory ${directory}. Ensure this session belongs to this project._`
+        const dirNote = sid && effectiveDirectory
+          ? `\n_Note: Using session ${sid} in directory ${effectiveDirectory}. Ensure this session belongs to this project._`
           : "";
 
         // 3. Poll until done
         const timeout = (maxDurationSeconds ?? 600) * 1000;
         const interval = 3000;
         const start = Date.now();
-        const dirLabel = directory ? `Directory: ${directory}\n` : "";
+        const dirLabel = effectiveDirectory ? `Directory: ${effectiveDirectory}\n` : "";
 
         while (Date.now() - start < timeout) {
           await new Promise((r) => setTimeout(r, interval));
 
-          const statuses = (await client.get("/session/status", undefined, directory)) as Record<string, unknown>;
+          const statuses = (await client.get("/session/status", undefined, effectiveDirectory)) as Record<string, unknown>;
           const status = resolveSessionStatus(statuses[sid!]);
 
           if (status === "idle" || status === "completed") {
@@ -712,7 +732,7 @@ export function registerWorkflowTools(
             const messages = await client.get(
               `/session/${sid}/message`,
               { limit: "1" },
-              directory,
+              effectiveDirectory,
             );
             const arr = messages as unknown[];
             const lastMsg = arr.length > 0 ? formatMessageResponse(arr[arr.length - 1]) : "";
@@ -720,7 +740,7 @@ export function registerWorkflowTools(
             // Get todo summary
             let todoSummary = "";
             try {
-              const todos = await client.get(`/session/${sid}/todo`, undefined, directory);
+              const todos = await client.get(`/session/${sid}/todo`, undefined, effectiveDirectory);
               if (Array.isArray(todos) && todos.length > 0) {
                 const completed = todos.filter((t: any) => t.status === "completed").length;
                 todoSummary = `\nTasks: ${completed}/${todos.length} completed`;
@@ -743,7 +763,7 @@ export function registerWorkflowTools(
         // Timeout — return progress report
         let todoProgress = "";
         try {
-          const todos = await client.get(`/session/${sid}/todo`, undefined, directory);
+          const todos = await client.get(`/session/${sid}/todo`, undefined, effectiveDirectory);
           if (Array.isArray(todos) && todos.length > 0) {
             const completed = todos.filter((t: any) => t.status === "completed").length;
             const inProgress = todos.filter((t: any) => t.status === "in_progress").length;
@@ -785,11 +805,18 @@ export function registerWorkflowTools(
       try {
         // 1. Create or reuse session
         let sid = sessionId;
+        let effectiveDirectory = directory;
+
         if (!sid) {
+          // Create new session with provided directory
           const session = (await client.post("/session", {
             title: title ?? prompt.slice(0, 80),
           }, { directory })) as Record<string, unknown>;
           sid = session.id as string;
+          effectiveDirectory = (session.directory as string) || directory;
+        } else if (!effectiveDirectory) {
+          // Reusing existing session, auto-fetch directory if not provided
+          effectiveDirectory = await getSessionDirectory(client, sid);
         }
 
         // 2. Send async
@@ -801,9 +828,9 @@ export function registerWorkflowTools(
         if (model) body.model = model;
         if (agent) body.agent = agent;
 
-        await client.post(`/session/${sid}/message`, body, { directory });
+        await client.post(`/session/${sid}/message`, body, { directory: effectiveDirectory });
 
-        const dirLabel = directory ? `Directory: ${directory}\n` : "";
+        const dirLabel = effectiveDirectory ? `Directory: ${effectiveDirectory}\n` : "";
         return toolResult(
           `${dirLabel}Task dispatched to session: ${sid}\n\n` +
           `OpenCode is now working autonomously. Use these tools to monitor:\n` +
@@ -833,18 +860,24 @@ export function registerWorkflowTools(
     readOnly,
     async ({ sessionId, detailed, directory }) => {
       try {
+        // Auto-fetch directory from session if not provided
+        let effectiveDirectory = directory;
+        if (!effectiveDirectory && sessionId) {
+          effectiveDirectory = await getSessionDirectory(client, sessionId);
+        }
+
         // Validate directory early — before .catch(() => null) swallows the error
-        directory = normalizeDirectory(directory) as typeof directory;
+        effectiveDirectory = normalizeDirectory(effectiveDirectory) as typeof effectiveDirectory;
 
         // Parallel fetch: status, todos, session info, optionally last message
         const promises: Promise<unknown>[] = [
-          client.get("/session/status", undefined, directory),
-          client.get(`/session/${sessionId}/todo`, undefined, directory).catch(() => null),
-          client.get(`/session/${sessionId}`, undefined, directory).catch(() => null),
+          client.get("/session/status", undefined, effectiveDirectory),
+          client.get(`/session/${sessionId}/todo`, undefined, effectiveDirectory).catch(() => null),
+          client.get(`/session/${sessionId}`, undefined, effectiveDirectory).catch(() => null),
         ];
         if (detailed) {
           promises.push(
-            client.get(`/session/${sessionId}/message`, { limit: "1" }, directory).catch(() => null),
+            client.get(`/session/${sessionId}/message`, { limit: "1" }, effectiveDirectory).catch(() => null),
           );
         }
 
@@ -881,7 +914,7 @@ export function registerWorkflowTools(
 
         // File changes count (from diff endpoint)
         try {
-          const diffs = await client.get(`/session/${sessionId}/diff`, undefined, directory) as unknown[];
+          const diffs = await client.get(`/session/${sessionId}/diff`, undefined, effectiveDirectory) as unknown[];
           if (Array.isArray(diffs) && diffs.length > 0) {
             lines.push(`Files changed: ${diffs.length}`);
           }
