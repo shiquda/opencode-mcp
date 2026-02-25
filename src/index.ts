@@ -46,6 +46,7 @@ import { registerMiscTools } from "./tools/misc.js";
 import { registerWorkflowTools } from "./tools/workflow.js";
 import { registerTuiTools } from "./tools/tui.js";
 import { registerEventTools } from "./tools/events.js";
+import { registerQuestionTools } from "./tools/question.js";
 
 // Resources and prompts
 import { registerResources } from "./resources.js";
@@ -177,6 +178,9 @@ registerWorkflowTools(server, client);
 
 // ── TUI control ─────────────────────────────────────────────────────
 registerTuiTools(server, client);
+
+// ── Question (QuickPick-style) ──────────────────────────────────────
+registerQuestionTools(server, client);
 
 // ── Event streaming ─────────────────────────────────────────────────
 registerEventTools(server, client);
