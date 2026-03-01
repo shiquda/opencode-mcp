@@ -38,20 +38,22 @@ export const directoryParam = z
 // ── Default Provider/Model ────────────────────────────────────────────
 
 /**
- * Module-level defaults for provider and model.
- * Set via `setModelDefaults()` during startup from env vars.
+ * Module-level defaults for provider, model, and agent.
+ * Can be set via environment variables or setModelDefaults() during startup.
  * If not set, tools fall back to whatever the OpenCode server decides.
  */
-let _defaultProviderID: string | undefined;
-let _defaultModelID: string | undefined;
+let _defaultProviderID: string | undefined = process.env.OPENCODE_DEFAULT_PROVIDER;
+let _defaultModelID: string | undefined = process.env.OPENCODE_DEFAULT_MODEL;
+let _defaultAgent: string | undefined = process.env.OPENCODE_DEFAULT_AGENT;
 
 /**
- * Set the global default provider and model.
- * Called once from index.ts during startup.
+ * Set the global default provider, model, and agent.
+ * Called once from index.ts during startup, or use env vars.
  */
-export function setModelDefaults(providerID?: string, modelID?: string): void {
-  _defaultProviderID = providerID;
-  _defaultModelID = modelID;
+export function setModelDefaults(providerID?: string, modelID?: string, agent?: string): void {
+  _defaultProviderID = providerID || _defaultProviderID;
+  _defaultModelID = modelID || _defaultModelID;
+  _defaultAgent = agent || _defaultAgent;
 }
 
 /**
@@ -75,6 +77,14 @@ export function applyModelDefaults(
   }
   // No defaults available — let the server decide
   return undefined;
+}
+
+/**
+ * Get the default agent.
+ * Returns the agent from env var or undefined.
+ */
+export function getDefaultAgent(): string | undefined {
+  return _defaultAgent;
 }
 
 // ── Directory Validation ─────────────────────────────────────────────

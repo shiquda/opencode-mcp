@@ -15,6 +15,7 @@ import {
   redactSecrets,
   resolveSessionStatus,
   applyModelDefaults,
+  getDefaultAgent,
   normalizeDirectory,
   getSessionDirectory,
   toolResult,
@@ -822,13 +823,15 @@ export function registerWorkflowTools(
         // 2. Send async
         const body: Record<string, unknown> = {
           parts: [{ type: "text", text: prompt }],
-          noReply: false,
         };
+        // Apply model defaults from env vars or explicit params
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        // Apply agent from env vars or explicit param
+        const effectiveAgent = agent || getDefaultAgent();
+        if (effectiveAgent) body.agent = effectiveAgent;
 
-        await client.post(`/session/${sid}/prompt_async`, body, { directory: effectiveDirectory });
+        await client.post(`/session/${sid}/prompt`, body, { directory: effectiveDirectory });
 
         const dirLabel = effectiveDirectory ? `Directory: ${effectiveDirectory}\n` : "";
         return toolResult(
