@@ -824,12 +824,14 @@ export function registerWorkflowTools(
         const body: Record<string, unknown> = {
           parts: [{ type: "text", text: prompt }],
         };
-        // Apply model defaults from env vars or explicit params
-        const model = applyModelDefaults(providerID, modelID);
-        if (model) body.model = model;
-        // Apply agent from env vars or explicit param
-        const effectiveAgent = agent || getDefaultAgent();
-        if (effectiveAgent) body.agent = effectiveAgent;
+        // Only add model/agent if explicitly provided
+        // Let OpenCode auto-select defaults if not specified
+        if (providerID && modelID) {
+          body.model = { providerID, modelID };
+        }
+        if (agent) {
+          body.agent = agent;
+        }
 
         await client.post(`/session/${sid}/prompt_async`, body, { directory: effectiveDirectory });
 
