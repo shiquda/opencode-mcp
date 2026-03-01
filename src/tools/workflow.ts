@@ -831,7 +831,7 @@ export function registerWorkflowTools(
         const effectiveAgent = agent || getDefaultAgent();
         if (effectiveAgent) body.agent = effectiveAgent;
 
-        await client.post(`/session/${sid}/prompt`, body, { directory: effectiveDirectory });
+        await client.post(`/session/${sid}/prompt_async`, body, { directory: effectiveDirectory });
 
         const dirLabel = effectiveDirectory ? `Directory: ${effectiveDirectory}\n` : "";
         return toolResult(
