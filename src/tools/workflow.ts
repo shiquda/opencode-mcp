@@ -830,7 +830,30 @@ export function registerWorkflowTools(
           body.model = { providerID, modelID };
         }
         if (agent) {
-          body.agent = agent;
+          // Map short names to full agent names
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
         }
 
         await client.post(`/session/${sid}/prompt_async`, body, { directory: effectiveDirectory });
