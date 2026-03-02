@@ -71,11 +71,12 @@ export function applyModelDefaults(
   if (providerID && modelID) {
     return { providerID, modelID };
   }
-  // Fall back to env-var defaults
-  if (_defaultProviderID && _defaultModelID) {
+  // Only use env-var defaults if BOTH providerID and modelID are provided together
+  // This prevents partial defaults that may not match valid provider/model pairs
+  if (!providerID && !modelID && _defaultProviderID && _defaultModelID) {
     return { providerID: _defaultProviderID, modelID: _defaultModelID };
   }
-  // No defaults available — let the server decide
+  // No valid defaults available — let the server decide
   return undefined;
 }
 
