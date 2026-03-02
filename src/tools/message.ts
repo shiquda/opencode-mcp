@@ -104,7 +104,32 @@ export function registerMessageTools(
         };
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names (same as opencode_fire)
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
         if (noReply !== undefined) body.noReply = noReply;
         if (system) body.system = system;
         const response = await client.post(
@@ -154,7 +179,32 @@ export function registerMessageTools(
         };
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names (same as opencode_fire)
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
         await client.post(`/session/${sessionId}/prompt_async`, body, { directory });
         return toolResult(
           "Message sent asynchronously. Use opencode_wait or opencode_message_list to check for responses.",
@@ -196,7 +246,32 @@ export function registerMessageTools(
           command,
           arguments: args ?? "",
         };
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names (same as opencode_fire)
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
         const cmdModel = applyModelDefaults(providerID, modelID);
         if (cmdModel) body.model = cmdModel;
         const result = await client.post(

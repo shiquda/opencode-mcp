@@ -264,7 +264,32 @@ export function registerWorkflowTools(
         };
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
         if (system) body.system = system;
 
         const response = await client.post(
@@ -316,7 +341,32 @@ export function registerWorkflowTools(
         };
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
 
         const response = await client.post(
           `/session/${sessionId}/message`,
@@ -707,7 +757,32 @@ export function registerWorkflowTools(
         };
         const model = applyModelDefaults(providerID, modelID);
         if (model) body.model = model;
-        if (agent) body.agent = agent;
+        if (agent) {
+          // Map short names to full agent names
+          const agentNameMap: Record<string, string> = {
+            'sisyphus': 'Sisyphus (Ultraworker)',
+            'hephaestus': 'Hephaestus (Deep Agent)',
+            'prometheus': 'Prometheus (Plan Builder)',
+            'atlas': 'Atlas (Plan Executor)',
+            'compaction': 'compaction',
+            'title': 'title',
+            'summary': 'summary',
+            'build': 'build',
+            'plan': 'plan',
+            'general': 'general',
+            'explore': 'explore',
+            'sisyphus-junior': 'Sisyphus-Junior',
+            'oracle': 'oracle',
+            'librarian': 'librarian',
+            'multimodal-looker': 'multimodal-looker',
+            'metis': 'Metis (Plan Consultant)',
+            'momus': 'Momus (Plan Critic)',
+            'architecture-doc-generator': 'architecture-doc-generator',
+            'code-structure-analyzer': 'code-structure-analyzer',
+            'context7-doc-searcher': 'context7-doc-searcher'
+          };
+          body.agent = agentNameMap[agent.toLowerCase()] || agent;
+        }
 
         await client.post(`/session/${sid}/message`, body, { directory: effectiveDirectory });
 
